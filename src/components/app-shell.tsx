@@ -65,7 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    if (needsOnboarding) {
+    if (needsOnboarding && !isOnboarding) {
       router.replace("/onboarding");
     }
   }, [user, loading, isReady, needsOnboarding, router, isOnboarding]);

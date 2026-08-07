@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, Lock, Mail, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -17,6 +17,7 @@ import { useThrift } from "@/providers/thrift-provider";
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { signInWithEmail, signInWithGoogle, signInDemo, resetPassword, user, mode } = useAuth();
   const { state } = useThrift();
 
@@ -27,9 +28,10 @@ export default function AdminLoginPage() {
 
   React.useEffect(() => {
     if (user) {
-      router.replace(state ? "/dashboard" : "/onboarding");
+      const target = state ? "/dashboard" : "/onboarding";
+      if (pathname !== target) router.replace(target);
     }
-  }, [user, state, router]);
+  }, [user, state, router, pathname]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +39,6 @@ export default function AdminLoginPage() {
     setLoading(true);
     try {
       await signInWithEmail(email, password);
-      router.replace(state ? "/dashboard" : "/onboarding");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in. Check your email and password.");
     } finally {
@@ -50,7 +51,6 @@ export default function AdminLoginPage() {
     setLoading(true);
     try {
       await signInWithGoogle();
-      router.replace(state ? "/dashboard" : "/onboarding");
     } catch {
       setError("Google sign-in failed.");
     } finally {

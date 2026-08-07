@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ShieldCheck, Sparkles } from "lucide-react";
 
@@ -15,6 +15,7 @@ import { initials } from "@/lib/format";
 
 export default function FamilyLoginPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { signInWithName, user, mode } = useAuth();
   const { state } = useThrift();
 
@@ -24,15 +25,15 @@ export default function FamilyLoginPage() {
 
   React.useEffect(() => {
     if (user) {
-      router.replace(state ? "/dashboard" : "/onboarding");
+      const target = state ? "/dashboard" : "/onboarding";
+      if (pathname !== target) router.replace(target);
     }
-  }, [user, state, router]);
+  }, [user, state, router, pathname]);
 
   function enter(displayName: string) {
     setError(null);
     try {
       signInWithName(displayName);
-      router.replace(state ? "/dashboard" : "/onboarding");
     } catch (err) {
       setError(err instanceof Error ? err.message : "We couldn't find that name.");
     }
