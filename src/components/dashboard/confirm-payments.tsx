@@ -1,12 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { Check, Clock3, HandCoins, ShieldCheck, X } from "lucide-react";
+import { Check, Clock3, Eye, HandCoins, ShieldCheck, X } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useThrift } from "@/providers/thrift-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { getWeeklyTarget } from "@/domain/calculations";
@@ -14,10 +20,13 @@ import { getWeeklyTarget } from "@/domain/calculations";
 export function ConfirmPayments() {
   const { state, approvePayment, rejectPayment } = useThrift();
   const [confirmId, setConfirmId] = React.useState<string | null>(null);
+  const [viewUrl, setViewUrl] = React.useState<string | null>(null);
 
   if (!state) return null;
 
-  const pending = state.payments.filter((p) => p.receiptStatus === "pending");
+  const pending = state.payments.filter(
+    (p) => p.receiptStatus === "pending" && Boolean(p.receiptUrl)
+  );
 
   if (pending.length === 0) {
     return (
@@ -33,10 +42,10 @@ export function ConfirmPayments() {
               <Check className="size-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold">All payments verified automatically</p>
+              <p className="text-sm font-semibold">No receipts waiting for review</p>
               <p className="text-xs text-muted-foreground">
-                Receipts whose sender, amount and account match are confirmed instantly. Uploads
-                that don’t fully match land here for a quick review.
+                Receipts whose sender, amount and account match are confirmed instantly. Only
+                uploads that couldn’t be verified appear here for a quick review.
               </p>
             </div>
           </div>
@@ -108,6 +117,15 @@ export function ConfirmPayments() {
                 <div className="flex gap-1.5">
                   <Button
                     size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={() => setViewUrl(payment.receiptUrl ?? null)}
+                    title="Open the receipt image to review it"
+                  >
+                    <Eye className="size-3.5" /> View receipt
+                  </Button>
+                  <Button
+                    size="sm"
                     className="gap-1"
                     onClick={() => setConfirmId(payment.id)}
                     title="Approve — the receipt amount will be recorded and the week marked paid"
@@ -133,6 +151,22 @@ export function ConfirmPayments() {
           Approving records the exact amount on the receipt and marks that week as paid.
         </p>
       </CardContent>
+
+      <Dialog open={viewUrl !== null} onOpenChange={(o) => !o && setViewUrl(null)}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-hidden">
+          <DialogHeader className="shrink-0 text-left">
+            <DialogTitle>Receipt preview</DialogTitle>
+          </DialogHeader>
+          {viewUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={viewUrl}
+              alt="Payment receipt"
+              className="w-full overflow-auto rounded-xl border object-contain"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

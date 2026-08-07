@@ -173,13 +173,16 @@ export function getElapsedWeekCount(state: ThriftState, today: Date = new Date()
   return state.weeks.filter((w) => getWeekStatus(w, today) !== "upcoming").length;
 }
 
-// Fills the unrecorded days of a week with savings, spreading `amount` across
-// them. Used when a week is settled so the day-by-day ledger matches reality.
+// Fills unrecorded working days of a week with savings, spreading `amount`
+// across them. Used when a week is settled so the day-by-day ledger matches
+// reality. `maxDays` limits how many days get filled (e.g. paying 7 days means
+// 5 days of this week plus 2 days of the next week).
 export function fillWeekSavings(
   state: ThriftState,
   memberId: string,
   weekId: string,
-  amount: number
+  amount: number,
+  maxDays?: number
 ): DaySaving[] {
   if (amount <= 0) return state.savings;
   const week = state.weeks.find((w) => w.id === weekId);
@@ -192,14 +195,16 @@ export function fillWeekSavings(
   );
   const missing = week.days.filter((d) => !alreadySaved.has(d.date));
   if (missing.length === 0) return state.savings;
-  const base = Math.floor(amount / missing.length);
-  const remainder = amount - base * missing.length;
-  const extra: DaySaving[] = missing.map((d, i) => ({
+  const toFill = maxDays !== undefined ? missing.slice(0, maxDays) : missing;
+  if (toFill.length === 0) return state.savings;
+  const base = Math.floor(amount / toFill.length);
+  const remainder = amount - base * toFill.length;
+  const extra: DaySaving[] = toFill.map((d, i) => ({
     id: `${memberId}-${d.date}`,
     memberId,
     weekId,
     date: d.date,
-    amount: base + (i === missing.length - 1 ? remainder : 0),
+    amount: base + (i === toFill.length - 1 ? remainder : 0),
   }));
   return [...state.savings, ...extra];
 }

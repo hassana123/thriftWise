@@ -32,7 +32,8 @@ interface ThriftContextValue {
     weekId: string,
     receiptUrl: string,
     amount?: number,
-    autoApproved?: boolean
+    autoApproved?: boolean,
+    daysCovered?: number
   ) => void;
   approvePayment: (memberId: string, weekId: string) => void;
   rejectPayment: (memberId: string, weekId: string, note?: string) => void;
@@ -109,7 +110,9 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
           refresh(false);
         } else if (event === "SIGNED_OUT") {
-          refresh(true);
+          // Keep the loaded thrift in memory after logging out so the family
+          // login page still lists members (anon RLS may hide the row). It
+          // reloads fresh when the next user signs in.
         }
       });
       unsubAuth = sub.subscription.unsubscribe;
@@ -222,57 +225,91 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
   );
 
   const uploadReceipt = React.useCallback(
-    (memberId: string, weekId: string, receiptUrl: string, amount?: number, autoApproved?: boolean) => {
+    (memberId: string, weekId: string, receiptUrl: string, amount?: number, autoApproved?: boolean, daysCovered?: number) => {
       setState((prev) => {
         if (!prev) return prev;
-        const week = prev.weeks.find((w) => w.id === weekId);
-        const target = week ? getWeeklyTarget(prev, memberId, week) : 0;
-        // Whatever amount is on the receipt is what gets recorded.
-        const receiptAmount = amount && amount > 0 ? amount : target;
-        const existing = prev.payments.find(
-          (p) => p.memberId === memberId && p.weekId === weekId
-        );
+        const startWeek = prev.weeks.find((w) => w.id === weekId);
+        if (!startWeek) return prev;
+        const plan = getMemberPlan(prev, memberId);
+        // Default is one working week (Mon–Fri). People sometimes pay ahead:
+        // 7 days = this week + Mon/Tue next week, 10 days = two full weeks.
+        // Weekends are never counted — only working days across consecutive weeks.
+        const defaultDays = startWeek.days.length || 5;
+        const totalDays = daysCovered && daysCovered > 0 ? Math.floor(daysCovered) : defaultDays;
+        const receiptAmount = amount && amount > 0 ? amount : plan.dailyAmount * totalDays;
+        const perDay = receiptAmount / totalDays;
         const isAutoApproved = Boolean(autoApproved) && receiptAmount > 0;
         const status = isAutoApproved ? ("approved" as const) : ("pending" as const);
-        const payment = existing
-          ? {
-              ...existing,
-              amount: receiptAmount || existing.amount,
-              receiptUrl,
-              receiptStatus: status,
-              status,
-              approvedAt: isAutoApproved ? iso(new Date()) : existing.approvedAt,
-            }
-          : {
-              id: `${memberId}-${weekId}`,
-              memberId,
-              weekId,
-              amount: receiptAmount,
-              status,
-              method: "transfer" as const,
-              receiptUrl,
-              receiptStatus: status,
-              approvedAt: isAutoApproved ? iso(new Date()) : undefined,
-              createdAt: iso(new Date()),
-            };
-        const payments = existing
-          ? prev.payments.map((p) => (p.id === payment.id ? payment : p))
-          : [...prev.payments, payment];
+        const now = iso(new Date());
+
+        const startIndex = prev.weeks.findIndex((w) => w.id === weekId);
+        let remainingDays = totalDays;
+        let remainingAmount = receiptAmount;
+        let payments = prev.payments;
+        let savings = prev.savings;
+        const coveredWeekNumbers: number[] = [];
+        let i = startIndex;
+        while (remainingDays > 0 && i < prev.weeks.length) {
+          const week = prev.weeks[i];
+          const daysInWeek = week.days.length;
+          const covered = Math.min(remainingDays, daysInWeek);
+          const weekAmount = i === prev.weeks.length - 1
+            ? remainingAmount
+            : Math.round(perDay * covered);
+          remainingDays -= covered;
+          remainingAmount -= weekAmount;
+          coveredWeekNumbers.push(week.number);
+
+          const existing = payments.find(
+            (p) => p.memberId === memberId && p.weekId === week.id
+          );
+          const payment = existing
+            ? {
+                ...existing,
+                amount: weekAmount,
+                receiptUrl,
+                receiptStatus: status,
+                status,
+                approvedAt: isAutoApproved ? now : existing.approvedAt,
+              }
+            : {
+                id: `${memberId}-${week.id}`,
+                memberId,
+                weekId: week.id,
+                amount: weekAmount,
+                status,
+                method: "transfer" as const,
+                receiptUrl,
+                receiptStatus: status,
+                approvedAt: isAutoApproved ? now : undefined,
+                createdAt: now,
+              };
+          payments = existing
+            ? payments.map((p) => (p.id === payment.id ? payment : p))
+            : [...payments, payment];
+          savings = fillWeekSavings(
+            { ...prev, payments, savings },
+            memberId,
+            week.id,
+            weekAmount,
+            covered
+          );
+          i += 1;
+        }
+
         const member = prev.members.find((m) => m.id === memberId);
-        const savings = fillWeekSavings(
-          { ...prev, payments },
-          memberId,
-          weekId,
-          payment.amount
-        );
+        const weeksLabel =
+          coveredWeekNumbers.length > 1
+            ? `Weeks ${coveredWeekNumbers[0]}–${coveredWeekNumbers[coveredWeekNumbers.length - 1]}`
+            : `Week ${coveredWeekNumbers[0]}`;
         return pushActivity(
           { ...prev, payments, savings },
           memberId,
           isAutoApproved ? "payment_approved" : "payment_uploaded",
           isAutoApproved
-            ? `${member?.name ?? "Member"}’s Week ${week?.number ?? ""} payment was verified automatically`
-            : `${member?.name ?? "Member"} uploaded a receipt for Week ${week?.number ?? ""}`,
-          payment.amount
+            ? `${member?.name ?? "Member"}’s ${weeksLabel} payment was verified automatically (${totalDays} days)`
+            : `${member?.name ?? "Member"} uploaded a receipt covering ${totalDays} days (${weeksLabel})`,
+          receiptAmount
         );
       });
     },
@@ -357,7 +394,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         const amount =
           customAmount || (week ? getWeeklyTarget(prev, memberId, week) : plan.dailyAmount * 5);
         const payment = existing
-          ? { ...existing, amount, status: "approved" as const, method: "manual" as const, approvedAt: iso(new Date()), receiptStatus: existing.receiptStatus ?? "approved" as const }
+          ? { ...existing, amount, status: "approved" as const, method: "manual" as const, approvedAt: iso(new Date()), receiptStatus: "approved" as const }
           : {
               id: `${memberId}-${weekId}`,
               memberId,

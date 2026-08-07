@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ReceiptUploadDialog } from "@/components/payments/receipt-upload-dialog";
-import { AdminMarkPaidDialog } from "@/components/dashboard/admin-mark-paid-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
@@ -19,7 +18,6 @@ export function WeeklyPaymentCard() {
   const { state } = useThrift();
   const { member } = useAuth();
   const [dialogWeek, setDialogWeek] = React.useState<string | null>(null);
-  const [markOpen, setMarkOpen] = React.useState(false);
 
   if (!state || !member) return null;
 
@@ -164,11 +162,8 @@ export function WeeklyPaymentCard() {
 
         {isAdmin ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" className="gap-2" onClick={() => setMarkOpen(true)}>
-              <HandCoins className="size-4" /> Mark a week as paid
-            </Button>
             <p className="text-xs text-muted-foreground">
-              Confirm each member once they&apos;ve paid below.
+              Confirm each member once they&apos;ve uploaded a receipt below.
             </p>
           </div>
         ) : null}
@@ -181,7 +176,6 @@ export function WeeklyPaymentCard() {
           amount={currentWeek ? getWeeklyTarget(state, member.id, currentWeek) : 0}
           account={state.settings.paymentAccount}
         />
-        <AdminMarkPaidDialog open={markOpen} onOpenChange={setMarkOpen} />
       </CardContent>
     </Card>
   );

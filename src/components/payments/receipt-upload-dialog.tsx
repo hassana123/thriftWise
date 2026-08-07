@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Check, ImagePlus, Loader2, PartyPopper, ShieldCheck } from "lucide-react";
+import { CalendarDays, Check, ImagePlus, Loader2, PartyPopper, ShieldCheck } from "lucide-react";
 
 import {
   Dialog,
@@ -45,6 +45,7 @@ export function ReceiptUploadDialog({
   const [receiptAmount, setReceiptAmount] = React.useState<string>("");
   const [senderName, setSenderName] = React.useState("");
   const [accountNumber, setAccountNumber] = React.useState("");
+  const [daysPaid, setDaysPaid] = React.useState(5);
   const [uploading, setUploading] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [wasAutoApproved, setWasAutoApproved] = React.useState(false);
@@ -56,6 +57,7 @@ export function ReceiptUploadDialog({
       setReceiptAmount(amount > 0 ? String(amount) : "");
       setSenderName(member?.name ?? "");
       setAccountNumber(account.accountNumber);
+      setDaysPaid(5);
       setUploading(false);
       setDone(false);
       setWasAutoApproved(false);
@@ -67,6 +69,14 @@ export function ReceiptUploadDialog({
     const num = parseFloat(receiptAmount);
     return Number.isFinite(num) && num > 0 ? num : 0;
   }, [receiptAmount]);
+
+  const daysLabel = React.useMemo(() => {
+    if (daysPaid <= 5) return "This week only (Mon–Fri)";
+    const weeks = Math.floor(daysPaid / 5);
+    const extra = daysPaid % 5;
+    if (extra === 0) return `${weeks} full weeks (${daysPaid} working days)`;
+    return `${weeks} week${weeks > 1 ? "s" : ""} + ${extra} day${extra > 1 ? "s" : ""} of the next week`;
+  }, [daysPaid]);
 
   const nameOk = React.useMemo(
     () => Boolean(member) && namesMatch(senderName, member?.name ?? ""),
@@ -84,7 +94,7 @@ export function ReceiptUploadDialog({
     setUploading(true);
     try {
       const url = await uploadReceipt(file, member.id, weekId);
-      saveReceipt(member.id, weekId, url, enteredAmount || undefined, allVerified);
+      saveReceipt(member.id, weekId, url, enteredAmount || undefined, allVerified, daysPaid);
       setWasAutoApproved(allVerified);
       setDone(true);
       fireConfetti();
@@ -112,18 +122,20 @@ export function ReceiptUploadDialog({
             </div>
             <div>
               <p className="text-lg font-bold">
-                {wasAutoApproved ? "Week automatically confirmed!" : "Receipt submitted!"}
+                {wasAutoApproved ? "Payment confirmed!" : "Receipt submitted!"}
               </p>
               <p className="text-sm text-muted-foreground">
                 {wasAutoApproved ? (
                   <>
-                    All details matched — Week {weekNumber} is now{" "}
-                    <span className="font-semibold text-foreground">marked as paid</span>. No review
+                    All details matched — your payment is now{" "}
+                    <span className="font-semibold text-foreground">marked as paid</span> for{" "}
+                    <span className="font-semibold text-foreground">{daysLabel}</span>. No review
                     needed.
                   </>
                 ) : (
                   <>
-                    Your payment is now{" "}
+                    Your payment for{" "}
+                    <span className="font-semibold text-foreground">{daysLabel}</span> is now{" "}
                     <span className="font-semibold text-foreground">pending review</span>. The admin
                     will approve it shortly.
                   </>
@@ -204,8 +216,52 @@ export function ReceiptUploadDialog({
               </div>
 
               <p className="text-xs text-muted-foreground">
-                When all three details match, this week is confirmed automatically — no admin review
-                needed.
+                When all three details match, this payment is confirmed automatically — no admin
+                review needed.
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <CalendarDays className="size-4 text-primary" /> How many days does this cover?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Paying for extra days covers the next week(s). Weekends are never counted — only
+                working days.
+              </p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[5, 7, 10, 15].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDaysPaid(d)}
+                    className={cn(
+                      "rounded-xl border-2 py-2 text-sm font-bold transition-all",
+                      daysPaid === d
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    )}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Custom days:</span>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={daysPaid}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setDaysPaid(Number.isFinite(v) && v > 0 ? v : 5);
+                  }}
+                  className="h-9 w-20 text-center font-bold"
+                />
+              </div>
+              <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs font-medium">
+                {daysLabel}
               </p>
             </div>
 
