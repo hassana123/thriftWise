@@ -41,7 +41,28 @@ export function PwaInstallPrompt() {
   const [showIos, setShowIos] = React.useState(false);
 
   React.useEffect(() => {
+    let onControllerChange: (() => void) | undefined;
     if ("serviceWorker" in navigator) {
+      let hadController = Boolean(navigator.serviceWorker.controller);
+      let refreshing = false;
+      const forceFresh = () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      };
+      // When the service worker is replaced (e.g. the update that purges the
+      // old cache), reload the page once so everyone gets the fresh version
+      // instantly — no hard refresh or closing the app needed.
+      onControllerChange = () => {
+        if (navigator.serviceWorker.controller) {
+          if (!hadController) {
+            hadController = true;
+            return;
+          }
+          forceFresh();
+        }
+      };
+      navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
 
@@ -68,6 +89,9 @@ export function PwaInstallPrompt() {
     return () => {
       window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
       window.removeEventListener("appinstalled", onInstalled);
+      if (onControllerChange) {
+        navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+      }
     };
   }, []);
 
