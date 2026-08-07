@@ -34,7 +34,7 @@ export default function LedgerPage() {
   const { state } = useThrift();
   const { member } = useAuth();
 
-  const [view, setView] = React.useState<ViewMode>("week");
+  const [view, setView] = React.useState<ViewMode>("day");
 
   const currentWeekIndex = React.useMemo(() => {
     if (!state) return 0;
@@ -154,9 +154,10 @@ export default function LedgerPage() {
 
       <p className="flex items-center gap-2 rounded-2xl border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
         <ShieldCheck className="size-4 shrink-0 text-primary" />
-        Paid (✓) means the week was confirmed settled. Pending (◷) means it isn&apos;t due or
-        hasn&apos;t been confirmed yet. Needs review (⚠) means a receipt is waiting for the admin.
-        To mark or undo a paid week, use the “Mark past weeks as paid” table on the Family page.
+        Paid (✓) means the whole week is covered. Partially paid (🟡) means some days are covered but
+        Mon–Fri isn&apos;t complete yet. Pending (◷) means it isn&apos;t due yet. Needs review (⚠)
+        means a receipt is waiting for the admin. To mark or undo a week, use the “Mark weeks as
+        paid” table on the Family page.
       </p>
     </div>
   );
