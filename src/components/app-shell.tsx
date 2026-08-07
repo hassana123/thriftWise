@@ -14,6 +14,7 @@ import {
   Moon,
   Sun,
   ChevronRight,
+  Wallet,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -35,7 +36,8 @@ import { PageTransition } from "@/components/page-transition";
 import { useTheme } from "@/components/theme-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { useThrift } from "@/providers/thrift-provider";
-import { initials } from "@/lib/format";
+import { initials, formatMoneyCompact } from "@/lib/format";
+import { getFamilySavings } from "@/domain/calculations";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -51,6 +53,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const { state, isReady, isReloading, markNotificationsRead } = useThrift();
   const { resolvedTheme, toggle } = useTheme();
+
+  const totalSaved = React.useMemo(() => (state ? getFamilySavings(state) : 0), [state]);
 
   const needsOnboarding = isReady && !isReloading && !loading && user && !state;
   const isOnboarding = pathname === "/onboarding";
@@ -145,6 +149,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1.5">
+            <Link
+              href="/analytics"
+              title={`Total family savings: ${formatMoneyCompact(totalSaved)}`}
+              className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1.5 transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <Wallet className="size-3.5 text-primary" />
+              <span className="text-xs font-bold tabular-nums">{formatMoneyCompact(totalSaved)}</span>
+              <span className="hidden text-[10px] font-medium text-muted-foreground sm:inline">
+                saved
+              </span>
+            </Link>
+
             <Button variant="ghost" size="icon" onClick={toggle} className="rounded-full" aria-label="Toggle theme">
               {resolvedTheme === "dark" ? (
                 <Sun className="size-[18px]" />

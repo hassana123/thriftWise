@@ -1,13 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Check, Clock, PiggyBank, TrendingUp, Wallet } from "lucide-react";
+import { Check, Clock, Coins, PiggyBank, TrendingUp, Wallet } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ContributionCalendar } from "@/components/dashboard/contribution-calendar";
+import { MonthlyTrend } from "@/components/dashboard/monthly-trend";
 import { useThrift } from "@/providers/thrift-provider";
-import { formatMoney, formatMoneyCompact, initials } from "@/lib/format";
+import { formatMoney, formatMoneyCompact, formatDate, initials } from "@/lib/format";
 import {
   getCollectionRate,
   getFamilySavings,
@@ -17,6 +19,7 @@ import {
   getWeekPayment,
 } from "@/domain/calculations";
 import { getCurrentWeek, getWeekStatus } from "@/domain/calendar";
+import type { PaymentStatus, ThriftState } from "@/domain/types";
 
 export default function AnalyticsPage() {
   const { state } = useThrift();
@@ -35,9 +38,9 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Family overview</h1>
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Analytics</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Simple numbers for the whole family — no charts, no jargon.
+          Simple numbers for the whole family — no jargon.
         </p>
       </div>
 
@@ -86,38 +89,63 @@ export default function AnalyticsPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Member ranking</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {ranking.map((m, i) => {
-            const saved = getTotalSaved(state, m.id);
-            const pct = topSaved > 0 ? Math.round((saved / topSaved) * 100) : 0;
-            return (
-              <div key={m.id} className="flex items-center gap-3">
-                <span className={`w-4 text-center text-sm font-bold ${i === 0 ? "text-warning" : "text-muted-foreground"}`}>
-                  {i + 1}
-                </span>
-                <Avatar className="size-8">
-                  <AvatarFallback style={{ backgroundColor: m.color }} className="text-white text-xs">
-                    {initials(m.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{m.name}</p>
-                    <p className="text-sm font-semibold">{formatMoneyCompact(saved)}</p>
-                  </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Member ranking</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {ranking.map((m, i) => {
+              const saved = getTotalSaved(state, m.id);
+              const pct = topSaved > 0 ? Math.round((saved / topSaved) * 100) : 0;
+              return (
+                <div key={m.id} className="flex items-center gap-3">
+                  <span className={`w-4 text-center text-sm font-bold ${i === 0 ? "text-warning" : "text-muted-foreground"}`}>
+                    {i + 1}
+                  </span>
+                  <Avatar className="size-8">
+                    <AvatarFallback style={{ backgroundColor: m.color }} className="text-white text-xs">
+                      {initials(m.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{m.name}</p>
+                      <p className="text-sm font-semibold">{formatMoneyCompact(saved)}</p>
+                    </div>
+                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Contribution calendar</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ContributionCalendar />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Monthly trend</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <MonthlyTrend scope="family" />
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <PaymentHistory state={state} />
+        <RecentActivity />
+      </div>
     </div>
   );
 }
@@ -146,5 +174,94 @@ function KpiCard({
       </div>
       <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
     </div>
+  );
+}
+
+function PaymentHistory({ state }: { state: ThriftState }) {
+  const payments = [...state.payments].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
+  const weekOf = (weekId: string) => state.weeks.find((w) => w.id === weekId);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Wallet className="size-4 text-primary" /> Recent payments
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {payments.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No payments recorded yet.</p>
+        ) : (
+          payments.map((p) => {
+            const member = state.members.find((m) => m.id === p.memberId);
+            const week = weekOf(p.weekId);
+            return (
+              <div key={p.id} className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-muted/60">
+                <Avatar className="size-8">
+                  <AvatarFallback style={{ backgroundColor: member?.color }} className="text-white text-xs">
+                    {initials(member?.name ?? "?")}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {member?.name} · Week {week?.number}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{formatDate(p.createdAt, "MMM d, h:mm a")}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold">{formatMoney(p.amount ?? 0)}</p>
+                  <PaymentStatusBadge status={p.status} />
+                </div>
+              </div>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaymentStatusBadge({ status }: { status: PaymentStatus }) {
+  const config: Record<PaymentStatus, { label: string; variant: "success" | "warning" | "destructive" | "muted" }> = {
+    approved: { label: "Paid", variant: "success" },
+    pending: { label: "Pending", variant: "warning" },
+    rejected: { label: "Rejected", variant: "destructive" },
+    overdue: { label: "Overdue", variant: "destructive" },
+  };
+  const c = config[status];
+  return <Badge variant={c.variant}>{c.label}</Badge>;
+}
+
+function RecentActivity() {
+  const { state } = useThrift();
+  if (!state) return null;
+
+  const activities = state.activities.slice(0, 8);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Coins className="size-4 text-primary" /> Recent activity
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {activities.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No activity yet.</p>
+        ) : (
+          activities.map((a) => (
+            <div key={a.id} className="flex items-start gap-3 rounded-xl p-2 transition-colors hover:bg-muted/60">
+              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Coins className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">{a.message}</p>
+                <p className="text-xs text-muted-foreground">{formatDate(a.createdAt, "MMM d, h:mm a")}</p>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }

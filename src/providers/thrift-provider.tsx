@@ -27,7 +27,7 @@ interface ThriftContextValue {
   mode: "supabase" | "demo";
   memberLookup: (id: string) => Member | null;
   recordSaving: (memberId: string, date: string, amount: number) => void;
-  uploadReceipt: (memberId: string, weekId: string, receiptUrl: string) => void;
+  uploadReceipt: (memberId: string, weekId: string, receiptUrl: string, amount?: number) => void;
   approvePayment: (memberId: string, weekId: string) => void;
   rejectPayment: (memberId: string, weekId: string, note?: string) => void;
   markPaidManually: (memberId: string, weekId: string, amount?: number) => void;
@@ -44,6 +44,7 @@ interface ThriftContextValue {
   createThrift: (input: OnboardingInput) => void;
   updateSettings: (patch: Partial<ThriftSettings>) => void;
   resetThrift: () => void;
+  clearAll: () => void | Promise<void>;
 }
 
 const ThriftContext = React.createContext<ThriftContextValue | undefined>(undefined);
@@ -212,18 +213,20 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
   );
 
   const uploadReceipt = React.useCallback(
-    (memberId: string, weekId: string, receiptUrl: string) => {
+    (memberId: string, weekId: string, receiptUrl: string, amount?: number) => {
       setState((prev) => {
         if (!prev) return prev;
         const week = prev.weeks.find((w) => w.id === weekId);
         const target = week ? getWeeklyTarget(prev, memberId, week) : 0;
+        // Whatever amount is on the receipt is what gets recorded.
+        const receiptAmount = amount && amount > 0 ? amount : target;
         const existing = prev.payments.find(
           (p) => p.memberId === memberId && p.weekId === weekId
         );
         const payment = existing
           ? {
               ...existing,
-              amount: target || existing.amount,
+              amount: receiptAmount || existing.amount,
               receiptUrl,
               receiptStatus: "pending" as const,
               status: "pending" as const,
@@ -232,7 +235,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
               id: `${memberId}-${weekId}`,
               memberId,
               weekId,
-              amount: target,
+              amount: receiptAmount,
               status: "pending" as const,
               method: "transfer" as const,
               receiptUrl,
@@ -243,7 +246,12 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
           ? prev.payments.map((p) => (p.id === payment.id ? payment : p))
           : [...prev.payments, payment];
         const member = prev.members.find((m) => m.id === memberId);
-        const savings = fillWeekSavings({ ...prev, payments }, memberId, weekId, target);
+        const savings = fillWeekSavings(
+          { ...prev, payments },
+          memberId,
+          weekId,
+          payment.amount
+        );
         return pushActivity(
           { ...prev, payments, savings },
           memberId,
@@ -680,6 +688,12 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
     setState(seeded.thrift);
   }, []);
 
+  // Wipes all saved data so the app can start again from scratch (onboarding).
+  const clearAll = React.useCallback(async () => {
+    await repository.reset();
+    setState(null);
+  }, [repository]);
+
   return (
     <ThriftContext.Provider
       value={{
@@ -702,6 +716,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         createThrift,
         updateSettings,
         resetThrift,
+        clearAll,
       }}
     >
       {children}

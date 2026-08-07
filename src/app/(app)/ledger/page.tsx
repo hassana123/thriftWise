@@ -1,18 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, HandCoins, Share2, ShieldCheck } from "lucide-react";
+import { BookOpen, Share2, ShieldCheck } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { AdminMarkPaidDialog } from "@/components/dashboard/admin-mark-paid-dialog";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { formatMoney, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getCurrentWeek } from "@/domain/calendar";
-import { getFamilySavings, getMemberPlan } from "@/domain/calculations";
+import { getFamilySavings, getMemberPlan, getWeekPayment } from "@/domain/calculations";
 import {
   buildLedger,
   LEDGER_STATUS_META,
@@ -22,26 +21,14 @@ import {
 const LEGEND_ORDER: LedgerStatus[] = ["paid", "pending", "review", "missed", "future"];
 
 export default function LedgerPage() {
-  const { state, unmarkPaid } = useThrift();
+  const { state } = useThrift();
   const { member } = useAuth();
-  const [markOpen, setMarkOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
-  const [armed, setArmed] = React.useState<{ memberId: string; weekId: string } | null>(null);
 
   if (!state || !member) return null;
 
   const ledger = buildLedger(state);
   const currentWeek = getCurrentWeek(state.weeks);
-  const isAdmin = member.role === "admin";
-
-  const handleUnmark = (memberId: string, weekId: string) => {
-    if (armed && armed.memberId === memberId && armed.weekId === weekId) {
-      unmarkPaid(memberId, weekId);
-      setArmed(null);
-    } else {
-      setArmed({ memberId, weekId });
-    }
-  };
 
   const buildLedgerText = () => {
     const lines: string[] = [];
@@ -91,16 +78,9 @@ export default function LedgerPage() {
             Total saved: <span className="font-semibold text-foreground">{formatMoney(getFamilySavings(state))}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-2" onClick={handleShare}>
-            <Share2 className="size-4" /> {copied ? "Copied!" : "Share ledger"}
-          </Button>
-          {isAdmin ? (
-            <Button size="sm" variant="outline" className="gap-2" onClick={() => setMarkOpen(true)}>
-              <HandCoins className="size-4" /> Record past weeks
-            </Button>
-          ) : null}
-        </div>
+        <Button size="sm" variant="outline" className="gap-2" onClick={handleShare}>
+          <Share2 className="size-4" /> {copied ? "Copied!" : "Share ledger"}
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
@@ -185,9 +165,7 @@ export default function LedgerPage() {
                         const meta = LEDGER_STATUS_META[cell];
                         const week = ledger.weeks[i];
                         const isCurrent = currentWeek?.id === week.id;
-                        const isArmed =
-                          armed?.memberId === row.member.id && armed?.weekId === week.id;
-                        const canUnmark = isAdmin && cell === "paid";
+                        const payment = getWeekPayment(state.payments, row.member.id, week.id);
                         return (
                           <td
                             key={week.id}
@@ -196,34 +174,22 @@ export default function LedgerPage() {
                               isCurrent && "bg-primary/[0.04]"
                             )}
                           >
-                            {canUnmark ? (
-                              <button
-                                type="button"
-                                onClick={() => handleUnmark(row.member.id, week.id)}
-                                className={cn(
-                                  "inline-flex size-7 items-center justify-center rounded-full text-xs font-bold transition-colors",
-                                  isArmed
-                                    ? "bg-destructive/15 text-destructive ring-2 ring-destructive/50"
-                                    : "bg-success/10 hover:bg-destructive/15 hover:text-destructive"
-                                )}
-                                title={isArmed ? "Tap again to unmark" : "Paid — tap to unmark"}
-                              >
-                                {isArmed ? "?" : meta.symbol}
-                              </button>
-                            ) : (
-                              <span
-                                className={cn(
-                                  "inline-flex size-6 items-center justify-center rounded-full text-xs font-bold",
-                                  cell === "paid" && "bg-success/10",
-                                  cell === "review" && "bg-warning/10",
-                                  cell === "missed" && "bg-destructive/10",
-                                  meta.className
-                                )}
-                                title={meta.label}
-                              >
-                                {meta.symbol}
-                              </span>
-                            )}
+                            <span
+                              className={cn(
+                                "inline-flex size-6 items-center justify-center rounded-full text-xs font-bold",
+                                cell === "paid" && "bg-success/10",
+                                cell === "review" && "bg-warning/10",
+                                cell === "missed" && "bg-destructive/10",
+                                meta.className
+                              )}
+                              title={
+                                cell === "paid" && payment?.amount
+                                  ? `${meta.label} · ${formatMoney(payment.amount)}`
+                                  : meta.label
+                              }
+                            >
+                              {meta.symbol}
+                            </span>
                           </td>
                         );
                       })}
@@ -240,10 +206,8 @@ export default function LedgerPage() {
         <ShieldCheck className="size-4 shrink-0 text-primary" />
         Paid (✓) means the week was confirmed settled. Pending (◷) means it isn&apos;t due or
         hasn&apos;t been confirmed yet. Needs review (⚠) means a receipt is waiting for the admin.
-        {isAdmin ? " As admin, tap any ✓ to unmark a mistaken confirmation (tap twice to confirm)." : " A week can be recorded retroactively any time."}
+        To mark or undo a paid week, use the “Mark past weeks as paid” table on the Family page.
       </p>
-
-      <AdminMarkPaidDialog open={markOpen} onOpenChange={setMarkOpen} />
     </div>
   );
 }

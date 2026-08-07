@@ -8,7 +8,7 @@ import {
   createColumnHelper,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { Check, Clock3, ShieldCheck, UserCheck, UserPlus, UserX, X } from "lucide-react";
+import { ShieldCheck, UserCheck, UserPlus, UserX } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
-import { formatMoney, formatMoneyCompact, initials, formatDate } from "@/lib/format";
+import { formatMoneyCompact, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getMemberPlan, getTotalSaved } from "@/domain/calculations";
 import { AddMemberDialog } from "@/components/members/add-member-dialog";
@@ -58,12 +58,7 @@ export default function MembersPage() {
         ) : null}
       </div>
       <MemberTable rows={rows} />
-      {isAdmin ? (
-        <>
-          <AdminControlPanel />
-          <Approvals />
-        </>
-      ) : null}
+      {isAdmin ? <AdminControlPanel /> : null}
       <AddMemberDialog open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );
@@ -223,61 +218,5 @@ function MemberTable({ rows }: { rows: Row[] }) {
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function Approvals() {
-  const { state, approvePayment, rejectPayment } = useThrift();
-  if (!state) return null;
-
-  const pending = state.payments.filter((p) => p.receiptStatus === "pending");
-  if (pending.length === 0) {
-    return (
-      <Card className="p-8 text-center">
-        <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
-          <Check className="size-6 text-primary" />
-        </div>
-        <p className="font-semibold">All receipts reviewed</p>
-        <p className="text-sm text-muted-foreground">New uploads will appear here for approval.</p>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-muted-foreground">Awaiting approval</h3>
-      {pending.map((payment) => {
-        const member = state.members.find((m) => m.id === payment.memberId);
-        const week = state.weeks.find((w) => w.id === payment.weekId);
-        return (
-          <Card key={payment.id} className="p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Avatar className="size-10">
-                <AvatarFallback style={{ backgroundColor: member?.color }} className="text-white text-xs">
-                  {initials(member?.name ?? "?")}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">
-                  {member?.name} · Week {week?.number}
-                </p>
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Clock3 className="size-3" /> Uploaded {formatDate(payment.createdAt, "MMM d")} · {formatMoney(payment.amount)}
-                </p>
-              </div>
-              <Badge variant="warning">Pending</Badge>
-              <div className="flex gap-2">
-                <Button size="sm" className="gap-1" onClick={() => approvePayment(payment.memberId, payment.weekId)}>
-                  <Check className="size-3.5" /> Approve
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1 text-destructive" onClick={() => rejectPayment(payment.memberId, payment.weekId, "Receipt unclear, please re-upload")}>
-                  <X className="size-3.5" /> Reject
-                </Button>
-              </div>
-            </div>
-          </Card>
-        );
-      })}
-    </div>
   );
 }

@@ -33,12 +33,13 @@ import type { ThriftSettings } from "@/domain/types";
 import { getReminderPrefs, setReminderPrefs } from "@/domain/reminders";
 
 export default function SettingsPage() {
-  const { state, updateSettings, resetThrift } = useThrift();
+  const { state, updateSettings, resetThrift, clearAll } = useThrift();
   const { member, user, signOut, mode } = useAuth();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const [notifications, setNotifications] = React.useState(getReminderPrefs());
   const [confirmReset, setConfirmReset] = React.useState(false);
+  const [confirmClear, setConfirmClear] = React.useState(false);
 
   if (!state || !member) return null;
 
@@ -214,6 +215,37 @@ export default function SettingsPage() {
                 ) : (
                   <Button size="sm" variant="outline" onClick={() => setConfirmReset(true)}>
                     Reset
+                  </Button>
+                )}
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Start over from scratch</p>
+                  <p className="text-xs text-muted-foreground">
+                    Erase all thrift data and set up a new one from onboarding
+                  </p>
+                </div>
+                {confirmClear ? (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={async () => {
+                        await clearAll();
+                        await signOut();
+                        router.replace("/login");
+                      }}
+                    >
+                      Yes, erase everything
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmClear(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="destructive" onClick={() => setConfirmClear(true)}>
+                    Start over
                   </Button>
                 )}
               </div>

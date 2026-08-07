@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, HandCoins, Pencil, Settings2, ShieldCheck } from "lucide-react";
+import { Check, HandCoins, Pencil, Settings2, ShieldCheck, Undo2 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,15 +17,17 @@ import {
 import { EditMemberDialog } from "@/components/members/edit-member-dialog";
 import { useThrift } from "@/providers/thrift-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { getMemberPlan, getWeekPayment, getWeeklyTarget } from "@/domain/calculations";
 import { getWeekStatus } from "@/domain/calendar";
 import { STANDARD_PLANS, buildPlan } from "@/domain/constants";
 import type { Member, PlanKey } from "@/domain/types";
 
 export function AdminControlPanel() {
-  const { state, changePlan, markPaidManually } = useThrift();
+  const { state, changePlan, markPaidManually, unmarkPaid } = useThrift();
   const [edited, setEdited] = React.useState<Record<string, string>>({});
   const [editing, setEditing] = React.useState<Member | null>(null);
+  const [armed, setArmed] = React.useState<{ memberId: string; weekId: string } | null>(null);
 
   if (!state) return null;
 
@@ -159,14 +161,38 @@ export function AdminControlPanel() {
                           const payment = getWeekPayment(state.payments, m.id, week.id);
                           const paid = payment?.status === "approved";
                           const amount = payment?.amount ?? getWeeklyTarget(state, m.id, week);
+                          const isArmed =
+                            armed?.memberId === m.id && armed?.weekId === week.id;
                           return (
                             <td key={m.id} className="px-2 py-2.5 text-center">
                               {paid ? (
-                                <span className="inline-flex flex-col items-center gap-0.5">
+                                <span className="inline-flex flex-col items-center gap-1">
                                   <span className="flex items-center gap-1 text-xs font-semibold text-success">
                                     <Check className="size-3.5" /> Paid
+                                    <span className="font-normal text-muted-foreground">
+                                      · {formatMoney(amount)}
+                                    </span>
                                   </span>
-                                  <span className="text-[10px] text-muted-foreground">{formatMoney(amount)}</span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className={cn(
+                                      "h-6 gap-1 px-2 text-[10px] font-medium text-muted-foreground hover:text-destructive",
+                                      isArmed && "bg-destructive/15 text-destructive ring-2 ring-destructive/50"
+                                    )}
+                                    onClick={() => {
+                                      if (isArmed) {
+                                        unmarkPaid(m.id, week.id);
+                                        setArmed(null);
+                                      } else {
+                                        setArmed({ memberId: m.id, weekId: week.id });
+                                      }
+                                    }}
+                                    title={isArmed ? "Tap again to unmark" : "Unmark this week"}
+                                  >
+                                    <Undo2 className="size-3" />
+                                    {isArmed ? "Tap again" : "Unmark"}
+                                  </Button>
                                 </span>
                               ) : (
                                 <Button
@@ -195,7 +221,8 @@ export function AdminControlPanel() {
               </table>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Tap “Mark paid” to record a week that was already settled before you started using the app.
+              Tap “Mark paid” to record a week that was already settled before the app existed. Tap
+              “Unmark” to undo a mistake — confirm by tapping again.
             </p>
           </div>
         </CardContent>

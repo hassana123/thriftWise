@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import { useThrift } from "@/providers/thrift-provider";
@@ -40,6 +41,7 @@ export function ReceiptUploadDialog({
 
   const [confirmed, setConfirmed] = React.useState(false);
   const [file, setFile] = React.useState<File | null>(null);
+  const [receiptAmount, setReceiptAmount] = React.useState<string>("");
   const [uploading, setUploading] = React.useState(false);
   const [done, setDone] = React.useState(false);
 
@@ -47,17 +49,24 @@ export function ReceiptUploadDialog({
     if (open) {
       setConfirmed(false);
       setFile(null);
+      setReceiptAmount(amount > 0 ? String(amount) : "");
       setUploading(false);
       setDone(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const enteredAmount = React.useMemo(() => {
+    const num = parseFloat(receiptAmount);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  }, [receiptAmount]);
 
   async function handleSubmit() {
     if (!member || !file) return;
     setUploading(true);
     try {
       const url = await uploadReceipt(file, member.id, weekId);
-      saveReceipt(member.id, weekId, url);
+      saveReceipt(member.id, weekId, url, enteredAmount || undefined);
       setDone(true);
       fireConfetti();
     } finally {
@@ -95,9 +104,27 @@ export function ReceiptUploadDialog({
           </motion.div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-2xl bg-primary p-4 text-center text-primary-foreground">
-              <p className="text-xs text-primary-foreground/70">Transfer amount</p>
-              <p className="text-3xl font-bold">{formatMoney(amount)}</p>
+            <div className="rounded-2xl bg-primary p-4 text-primary-foreground">
+              <p className="text-xs text-primary-foreground/70">
+                Amount on your receipt (editable)
+              </p>
+              <div className="relative mt-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-primary-foreground/70">
+                  ₦
+                </span>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  className="h-12 border-white/20 bg-white/10 pl-9 text-2xl font-bold text-white placeholder:text-primary-foreground/50 focus-visible:bg-white/15"
+                  value={receiptAmount}
+                  onChange={(e) => setReceiptAmount(e.target.value)}
+                  placeholder={formatMoney(amount)}
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-primary-foreground/70">
+                Enter exactly what the receipt shows — that amount will be recorded once approved.
+              </p>
             </div>
 
             <div className="space-y-2 rounded-2xl border p-4 text-sm">
@@ -152,7 +179,11 @@ export function ReceiptUploadDialog({
               />
             </label>
 
-            <Button className="w-full" disabled={!confirmed || !file || uploading} onClick={handleSubmit}>
+            <Button
+              className="w-full"
+              disabled={!confirmed || !file || !enteredAmount || uploading}
+              onClick={handleSubmit}
+            >
               {uploading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
               {uploading ? "Uploading…" : "Submit for review"}
             </Button>
