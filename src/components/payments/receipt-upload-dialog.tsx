@@ -78,18 +78,21 @@ export function ReceiptUploadDialog({
     return getMemberPlan(state, member.id)?.dailyAmount ?? 0;
   }, [state, member]);
 
+  const weekDays = React.useMemo(() => {
+    if (!state) return 5;
+    return state.weeks.find((w) => w.id === weekId)?.days.length ?? 5;
+  }, [state, weekId]);
+
   const effectiveDays = React.useMemo(() => {
     if (enteredAmount > 0 && dailyRate > 0) return Math.max(1, Math.round(enteredAmount / dailyRate));
     return daysPaid;
   }, [enteredAmount, dailyRate, daysPaid]);
 
   const daysLabel = React.useMemo(() => {
-    if (effectiveDays <= 5) return "This week only (Mon–Fri)";
-    const weeks = Math.floor(effectiveDays / 5);
-    const extra = effectiveDays % 5;
-    if (extra === 0) return `${weeks} full weeks (${effectiveDays} working days)`;
-    return `${weeks} week${weeks > 1 ? "s" : ""} + ${extra} day${extra > 1 ? "s" : ""} of the next week`;
-  }, [effectiveDays]);
+    if (effectiveDays <= weekDays) return `This week only (Mon–Fri, ${weekDays} days)`;
+    const over = formatMoney((effectiveDays - weekDays) * dailyRate);
+    return `This week’s Mon–Fri fully covered + ${over} overpayment (never auto-covers next week)`;
+  }, [effectiveDays, weekDays, dailyRate]);
 
   const nameOk = React.useMemo(
     () => Boolean(member) && namesMatch(senderName, member?.name ?? ""),
@@ -239,8 +242,9 @@ export function ReceiptUploadDialog({
                 <CalendarDays className="size-4 text-primary" /> How many days does this cover?
               </p>
               <p className="text-xs text-muted-foreground">
-                The amount decides how many days this covers (e.g. ₦2,100 at ₦300/day = 7 days) —
-                extra days roll into the next week(s). Weekends are never counted.
+                The amount you enter is recorded for this week. A week only counts as complete when
+                all its Mon–Fri days are covered — extra money stays as an overpayment and never
+                auto-covers next week.
               </p>
               <div className="grid grid-cols-4 gap-1.5">
                 {[5, 7, 10, 15].map((d) => (
