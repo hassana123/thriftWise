@@ -1,49 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { Check, MessageCircle } from "lucide-react";
+import { Camera, Check, Download, Loader2, MessageCircle, Share2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useThrift } from "@/providers/thrift-provider";
-import { formatMoney } from "@/lib/format";
-import { getCurrentWeek } from "@/domain/calendar";
 import {
-  getFamilyGoal,
-  getFamilySavings,
-  getWeekPayment,
-  getWeeklyTarget,
-} from "@/domain/calculations";
-import type { ThriftState } from "@/domain/types";
-
-const GROUP_LINK = "https://chat.whatsapp.com/GqxSvRvr0i4KD6FiNaLlvC";
-
-function buildUpdateMessage(state: ThriftState): string {
-  const week = getCurrentWeek(state.weeks);
-  const totalSaved = getFamilySavings(state);
-  const goal = getFamilyGoal(state);
-  const weeklyTotal = week
-    ? state.members.reduce(
-        (sum, m) => sum + (m.status === "active" ? getWeeklyTarget(state, m.id, week) : 0),
-        0
-      )
-    : 0;
-  const lines: string[] = [
-    `🏝️ *${state.settings.name}*`,
-    `Total saved: *${formatMoney(totalSaved)}* of *${formatMoney(goal)}* goal`,
-    week ? `Current week: Week ${week.number} · *${formatMoney(weeklyTotal)}* due this week` : "",
-    "",
-    ...state.members.map((m) => {
-      const payment = week ? getWeekPayment(state.payments, m.id, week.id) : undefined;
-      const done = payment?.status === "approved";
-      const amount = week ? getWeeklyTarget(state, m.id, week) : 0;
-      return done ? `✅ ${m.name} — paid ${formatMoney(payment?.amount ?? amount)}` : `⏳ ${m.name} — pending`;
-    }),
-    "",
-    `Join the group: ${GROUP_LINK}`,
-    `Made with ThriftWise`,
-  ];
-  return lines.filter(Boolean).join("\n");
-}
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useThrift } from "@/providers/thrift-provider";
+import { LedgerSnapshot } from "@/components/dashboard/ledger-snapshot";
 
 export function WhatsAppShareButton({
   variant = "outline",
@@ -53,47 +22,130 @@ export function WhatsAppShareButton({
   className?: string;
 }) {
   const { state } = useThrift();
+  const snapshotRef = React.useRef<HTMLDivElement>(null);
+  const [capturing, setCapturing] = React.useState(false);
+  const [image, setImage] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
 
   if (!state) return null;
 
-  const currentState = state;
+  async function captureImage(): Promise<string | null> {
+    if (!snapshotRef.current) return null;
+    // Give the off-screen node a tick to lay out before capturing.
+    await new Promise((r) => setTimeout(r, 50));
+    const { toPng } = await import("html-to-image");
+    return toPng(snapshotRef.current, {
+      pixelRatio: 2,
+      backgroundColor: "#ffffff",
+      width: snapshotRef.current.offsetWidth,
+      height: snapshotRef.current.offsetHeight,
+    });
+  }
 
-  function handleShare() {
-    const message = buildUpdateMessage(currentState);
-    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(url, "_blank");
+  async function handleShare() {
+    if (capturing) return;
+    setCapturing(true);
+    try {
+      const dataUrl = await captureImage();
+      if (dataUrl) setImage(dataUrl);
+    } finally {
+      setCapturing(false);
+    }
+  }
+
+  async function handleDownload() {
+    if (!image) return;
+    const a = document.createElement("a");
+    a.href = image;
+    a.download = "thrift-ledger.png";
+    a.click();
+  }
+
+  async function handleNativeShare() {
+    if (!image) return;
+    try {
+      const blob = await (await fetch(image)).blob();
+      const file = new File([blob], "thrift-ledger.png", { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Family thrift ledger" });
+        return;
+      }
+    } catch {
+      /* share cancelled or unsupported — fall through to download */
+    }
+    await handleDownload();
   }
 
   async function handleCopy() {
-    const message = buildUpdateMessage(currentState);
+    if (!image) return;
     try {
-      await navigator.clipboard.writeText(message);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      const blob = await (await fetch(image)).blob();
+      const file = new File([blob], "thrift-ledger.png", { type: "image/png" });
+      if (navigator.clipboard?.write) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": file })]);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      } else {
+        await handleDownload();
+      }
     } catch {
-      /* ignore */
+      await handleDownload();
     }
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button variant={variant} size="sm" className={className} onClick={handleShare}>
-        <MessageCircle className="size-4" /> Share to WhatsApp group
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className={className}
-        onClick={handleCopy}
-        title="Copy the update message"
-      >
-        {copied ? <Check className="size-4 text-success" /> : null}
-        {copied ? "Copied" : "Copy text"}
-      </Button>
-      <span className="hidden text-xs text-muted-foreground sm:block">
-        Opens WhatsApp with the update ready to post in the group.
-      </span>
-    </div>
+    <>
+      <LedgerSnapshot ref={snapshotRef} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant={variant} size="sm" className={className} onClick={handleShare} disabled={capturing}>
+          {capturing ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Camera className="size-4" />
+          )}
+          {capturing ? "Taking snapshot…" : "Share ledger snapshot"}
+        </Button>
+      </div>
+
+      <Dialog open={image !== null} onOpenChange={(o) => !o && setImage(null)}>
+        <DialogContent className="flex max-h-[85vh] max-w-md flex-col gap-4">
+          <DialogHeader className="shrink-0 text-left">
+            <DialogTitle>Ledger snapshot</DialogTitle>
+            <DialogDescription>
+              Download the image, or share it directly into the WhatsApp group.
+            </DialogDescription>
+          </DialogHeader>
+
+          {image ? (
+            <div className="min-h-0 overflow-y-auto overflow-hidden rounded-xl border bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={image} alt="Family thrift ledger" className="w-full" />
+            </div>
+          ) : null}
+
+          <div className="shrink-0">
+            <div className="flex flex-col gap-2">
+              <Button className="w-full gap-2" onClick={handleNativeShare}>
+                <MessageCircle className="size-4" /> Share to WhatsApp
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="gap-2" onClick={handleDownload}>
+                  <Download className="size-4" /> Download
+                </Button>
+                <Button variant="outline" className="gap-2" onClick={handleCopy}>
+                  {copied ? <Check className="size-4 text-success" /> : <Share2 className="size-4" />}
+                  {copied ? "Copied" : "Copy image"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <p className="shrink-0 text-center text-xs text-muted-foreground">
+            Tip: if “Share to WhatsApp” isn’t available on this device, download the image and
+            attach it in the group chat.
+          </p>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

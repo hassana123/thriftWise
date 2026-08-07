@@ -95,8 +95,8 @@ export function ReceiptUploadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm gap-5">
-        <DialogHeader className="text-left">
+      <DialogContent className="flex max-h-[85vh] max-w-sm flex-col gap-5">
+        <DialogHeader className="shrink-0 text-left">
           <DialogTitle>Complete your transfer</DialogTitle>
           <DialogDescription>Week {weekNumber} contribution</DialogDescription>
         </DialogHeader>
@@ -105,7 +105,7 @@ export function ReceiptUploadDialog({
           <motion.div
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center gap-4 py-6 text-center"
+            className="flex flex-col items-center gap-4 overflow-y-auto py-6 text-center"
           >
             <div className="flex size-20 items-center justify-center rounded-full bg-success/15">
               <PartyPopper className="size-10 text-primary" />
@@ -135,7 +135,7 @@ export function ReceiptUploadDialog({
             </Button>
           </motion.div>
         ) : (
-          <div className="space-y-4">
+          <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
             <div className="rounded-2xl bg-primary p-4 text-primary-foreground">
               <p className="text-xs text-primary-foreground/70">
                 Amount on your receipt (editable)
