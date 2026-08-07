@@ -52,6 +52,7 @@ export function MarkPaidDialog({
   const [weekId, setWeekId] = React.useState(startWeekId);
   const [amount, setAmount] = React.useState("");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const listRef = React.useRef<HTMLDivElement>(null);
 
   const entered = Math.round(Number(amount) || 0);
 
@@ -60,6 +61,15 @@ export function MarkPaidDialog({
       setWeekId(startWeekId);
       setAmount("");
       setSelected(new Set());
+      // Bring the week the admin clicked into view.
+      requestAnimationFrame(() => {
+        const container = listRef.current;
+        if (!container) return;
+        const target = container.querySelector<HTMLElement>(`[data-week-card="${startWeekId}"]`);
+        if (!target) return;
+        const top = target.offsetTop - container.clientHeight / 2 + target.clientHeight / 2;
+        container.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+      });
     }
   }, [open, startWeekId]);
 
@@ -74,6 +84,11 @@ export function MarkPaidDialog({
   const dailyFor = (date: string) => {
     const w = weeks.find((x) => x.days.some((d) => d.date === date));
     return w ? getPlanForWeek(state, member.id, w).dailyAmount : 0;
+  };
+
+  const syncAmountFrom = (days: Set<string>) => {
+    const total = [...days].reduce((sum, d) => sum + dailyFor(d), 0);
+    setAmount(total > 0 ? String(total) : "");
   };
 
   const handleAmountChange = (value: string) => {
@@ -100,12 +115,29 @@ export function MarkPaidDialog({
     if (next.has(date)) next.delete(date);
     else next.add(date);
     setSelected(next);
-    const total = [...next].reduce((sum, d) => sum + dailyFor(d), 0);
-    setAmount(total > 0 ? String(total) : "");
+    syncAmountFrom(next);
+  };
+
+  // Selecting a week's checkbox picks all of that week's still-unpaid days.
+  const toggleWeek = (week: ThriftWeek) => {
+    const unpaid = week.days.filter((d) => !coveredDates.has(d.date));
+    const next = new Set(selected);
+    const allSelected = unpaid.length > 0 && unpaid.every((d) => next.has(d.date));
+    for (const d of unpaid) {
+      if (allSelected) next.delete(d.date);
+      else next.add(d.date);
+    }
+    setSelected(next);
+    syncAmountFrom(next);
   };
 
   const total = [...selected].reduce((sum, d) => sum + dailyFor(d), 0);
-  const coverage = entered > 0 ? planDayCoverage(state, member.id, weekId, entered) : [];
+  const selectedByWeek = weeks
+    .map((w) => ({
+      week: w,
+      dates: w.days.filter((d) => selected.has(d.date) && !coveredDates.has(d.date)).map((d) => d.date),
+    }))
+    .filter((c) => c.dates.length > 0);
 
   const confirm = () => {
     if (selected.size === 0) return;
@@ -131,7 +163,10 @@ export function MarkPaidDialog({
           </p>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div
+          ref={listRef}
+          className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4"
+        >
           <div className="space-y-1.5">
             <Label>Starting from which week?</Label>
             <Select value={weekId} onValueChange={handleWeekChange}>
@@ -165,10 +200,12 @@ export function MarkPaidDialog({
                 placeholder={String(startTarget)}
               />
             </div>
-            {coverage.length > 0 ? (
+            {selected.size > 0 ? (
               <p className="text-xs text-muted-foreground">
                 {formatMoney(total)} = {selected.size} day{selected.size === 1 ? "" : "s"}:{" "}
-                {coverage.map((c) => `Week ${c.week.number} (${c.dates.length} day${c.dates.length === 1 ? "" : "s"})`).join(" + ")}
+                {selectedByWeek
+                  .map((c) => `Week ${c.week.number} (${c.dates.length} day${c.dates.length === 1 ? "" : "s"})`)
+                  .join(" + ")}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -182,20 +219,49 @@ export function MarkPaidDialog({
               const covered = week.days.filter((d) => coveredDates.has(d.date)).length;
               const saved = getWeekSavings(state.savings, member.id, week.id);
               const target = getWeeklyTarget(state, member.id, week);
-              const inWeek = week.days.filter((d) => selected.has(d.date) && !coveredDates.has(d.date));
+              const unpaid = week.days.filter((d) => !coveredDates.has(d.date));
+              const weekSelected = unpaid.filter((d) => selected.has(d.date));
+              const allSelected = unpaid.length > 0 && weekSelected.length === unpaid.length;
               return (
-                <div key={week.id} className="rounded-2xl border p-3">
+                <div
+                  key={week.id}
+                  data-week-card={week.id}
+                  className="rounded-2xl border p-3"
+                >
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">
-                      Week {week.number}
-                      {covered === week.days.length ? (
-                        <span className="ml-1.5 text-xs font-medium text-success">· fully paid</span>
-                      ) : covered > 0 ? (
-                        <span className="ml-1.5 text-xs font-medium text-warning">
-                          · {formatMoney(saved)}/{formatMoney(target)} paid
-                        </span>
-                      ) : null}
-                    </p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleWeek(week)}
+                        disabled={unpaid.length === 0}
+                        title={
+                          unpaid.length === 0
+                            ? "This week is already fully paid"
+                            : allSelected
+                              ? "Deselect all days this week"
+                              : "Select all days this week"
+                        }
+                        className={cn(
+                          "flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                          allSelected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input hover:border-primary/50",
+                          unpaid.length === 0 && "cursor-not-allowed opacity-40"
+                        )}
+                      >
+                        {allSelected ? <Check className="size-3.5" strokeWidth={3} /> : null}
+                      </button>
+                      <p className="text-sm font-semibold">
+                        Week {week.number}
+                        {covered === week.days.length ? (
+                          <span className="ml-1.5 text-xs font-medium text-success">· fully paid</span>
+                        ) : covered > 0 ? (
+                          <span className="ml-1.5 text-xs font-medium text-warning">
+                            · {formatMoney(saved)}/{formatMoney(target)} paid
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
                     <span className="text-xs text-muted-foreground">
                       {formatDate(week.startDate, "MMM d")} – {formatDate(week.endDate, "MMM d")}
                     </span>
@@ -239,9 +305,9 @@ export function MarkPaidDialog({
                       );
                     })}
                   </div>
-                  {inWeek.length > 0 ? (
+                  {weekSelected.length > 0 ? (
                     <p className="mt-1.5 text-[11px] font-medium text-primary">
-                      This payment marks {inWeek.length} day{inWeek.length === 1 ? "" : "s"} here
+                      This payment marks {weekSelected.length} day{weekSelected.length === 1 ? "" : "s"} here
                     </p>
                   ) : null}
                 </div>

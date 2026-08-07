@@ -20,7 +20,7 @@ import { useThrift } from "@/providers/thrift-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getMemberPlan, getWeekSavings, getWeeklyTarget } from "@/domain/calculations";
-import { getWeekStatus } from "@/domain/calendar";
+import { getCurrentWeek, getWeekStatus } from "@/domain/calendar";
 import { STANDARD_PLANS, buildPlan } from "@/domain/constants";
 import type { Member, PlanKey } from "@/domain/types";
 
@@ -30,11 +30,24 @@ export function AdminControlPanel() {
   const [editing, setEditing] = React.useState<Member | null>(null);
   const [armed, setArmed] = React.useState<{ memberId: string; weekId: string } | null>(null);
   const [marking, setMarking] = React.useState<{ memberId: string; weekId: string } | null>(null);
+  const tableRef = React.useRef<HTMLDivElement>(null);
+
+  const currentWeek = getCurrentWeek(state?.weeks ?? []);
+
+  // Keep the current week centred in the scrollable table whenever the weeks
+  // change, so the admin always lands where the action is.
+  React.useEffect(() => {
+    if (!state || !currentWeek) return;
+    const container = tableRef.current;
+    if (!container) return;
+    const target = container.querySelector<HTMLElement>(`[data-week-row="${currentWeek.id}"]`);
+    if (!target) return;
+    const top = target.offsetTop - container.clientHeight / 2 + target.offsetHeight / 2;
+    container.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.weeks.length, currentWeek?.id]);
 
   if (!state) return null;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const editableWeeks = state.weeks.filter((w) => w.startDate <= today && w.endDate >= w.startDate);
 
   const applyPlan = (memberId: string) => {
     const key = (edited[memberId] ?? "one-hand") as PlanKey;
@@ -131,9 +144,12 @@ export function AdminControlPanel() {
 
           <div>
             <h3 className="mb-2 text-sm font-semibold text-muted-foreground">
-              Mark past weeks as paid (before the app existed)
+              Mark weeks as paid (manual records)
             </h3>
-            <div className="overflow-x-auto rounded-2xl border">
+            <div
+              ref={tableRef}
+              className="relative max-h-[70vh] overflow-auto rounded-2xl border"
+            >
               <table className="w-full min-w-[540px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
@@ -148,10 +164,10 @@ export function AdminControlPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {editableWeeks.map((week) => {
+                  {state.weeks.map((week) => {
                     const status = getWeekStatus(week);
                     return (
-                      <tr key={week.id} className="border-b last:border-0">
+                      <tr key={week.id} data-week-row={week.id} className="border-b last:border-0">
                         <td className="px-3 py-2.5">
                           <p className="font-semibold">Week {week.number}</p>
                           <div className="flex items-center text-xs text-muted-foreground">
@@ -219,10 +235,10 @@ export function AdminControlPanel() {
                       </tr>
                     );
                   })}
-                  {editableWeeks.length === 0 ? (
+                  {state.weeks.length === 0 ? (
                     <tr>
                       <td colSpan={state.members.length + 1} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                        No weeks have started yet.
+                        No weeks generated yet.
                       </td>
                     </tr>
                   ) : null}
@@ -230,11 +246,11 @@ export function AdminControlPanel() {
               </table>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Tap “Mark paid” to enter the amount that person paid for that week. If it covered days
-              in the next week too (e.g. ₦2,100 = Mon–Fri + Mon/Tue of next week), those are shown
-              and marked automatically. A week only shows <b>Paid</b> once all its Mon–Fri days are
-              covered — until then you can keep adding. Tap “Unmark” to undo a mistake — confirm by
-              tapping again.
+              All weeks are listed — the current week stays centred as you scroll. Tap “Mark paid”
+              to enter the amount that person paid for that week; if it covered days in the next
+              week too (e.g. ₦2,100 = Mon–Fri + Mon/Tue of next week), those are marked
+              automatically. A week only shows <b>Paid</b> once all its Mon–Fri days are covered.
+              Tap “Unmark” to undo a mistake — confirm by tapping again.
             </p>
           </div>
         </CardContent>
