@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, Share2, ShieldCheck } from "lucide-react";
+import { BookOpen, ShieldCheck } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
@@ -12,6 +11,7 @@ import { formatMoney, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getCurrentWeek } from "@/domain/calendar";
 import { getFamilySavings, getMemberPlan, getWeekPayment } from "@/domain/calculations";
+import { WhatsAppShareButton } from "@/components/dashboard/whatsapp-share-button";
 import {
   buildLedger,
   LEDGER_STATUS_META,
@@ -23,46 +23,11 @@ const LEGEND_ORDER: LedgerStatus[] = ["paid", "pending", "review", "missed", "fu
 export default function LedgerPage() {
   const { state } = useThrift();
   const { member } = useAuth();
-  const [copied, setCopied] = React.useState(false);
 
   if (!state || !member) return null;
 
   const ledger = buildLedger(state);
   const currentWeek = getCurrentWeek(state.weeks);
-
-  const buildLedgerText = () => {
-    const lines: string[] = [];
-    lines.push(`${state.settings.name} — Family Contribution Ledger`);
-    lines.push("");
-    const nameWidth = Math.max(...ledger.rows.map((r) => r.member.name.length), 6) + 2;
-    const header = `Member${" ".repeat(Math.max(0, nameWidth - 6))}` +
-      ledger.weeks.map((w) => `W${w.number}`.padStart(4)).join("");
-    lines.push(header);
-    for (const row of ledger.rows) {
-      lines.push(
-        row.member.name.padEnd(nameWidth) +
-          row.cells.map((c) => LEDGER_STATUS_META[c].symbol.padStart(4)).join("")
-      );
-    }
-    lines.push("");
-    lines.push("✓ Paid  ◷ Pending  ⚠ Needs review  ✕ Missed  · Not due yet");
-    return lines.join("\n");
-  };
-
-  const handleShare = async () => {
-    const text = buildLedgerText();
-    try {
-      if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: `${state.settings.name} — Contribution Ledger`, text });
-      } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 2000);
-      }
-    } catch {
-      // user cancelled the share sheet
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -78,9 +43,7 @@ export default function LedgerPage() {
             Total saved: <span className="font-semibold text-foreground">{formatMoney(getFamilySavings(state))}</span>
           </p>
         </div>
-        <Button size="sm" variant="outline" className="gap-2" onClick={handleShare}>
-          <Share2 className="size-4" /> {copied ? "Copied!" : "Share ledger"}
-        </Button>
+        <WhatsAppShareButton />
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">

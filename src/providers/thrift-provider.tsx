@@ -12,7 +12,7 @@ import type {
   ThriftState,
 } from "@/domain/types";
 import { generateWeeks, getCurrentWeek, iso, parseDay } from "@/domain/calendar";
-import { buildPlan, AVATAR_COLORS } from "@/domain/constants";
+import { buildPlan, planKeyFromAmount, AVATAR_COLORS } from "@/domain/constants";
 import { getRepository, seedDemoState } from "@/lib/repository";
 import { getSupabaseMode } from "@/lib/supabase/config";
 import { deleteReceipt } from "@/lib/upload";
@@ -650,10 +650,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
       memberPlans: Object.fromEntries(
         members.map((m) => [
           m.id,
-          buildPlan(
-            m.id === creatorId ? "one-hand" : "one-hand",
-            input.defaultDailyAmount
-          ),
+          buildPlan(planKeyFromAmount(input.defaultDailyAmount), input.defaultDailyAmount),
         ])
       ),
       planHistory: {},

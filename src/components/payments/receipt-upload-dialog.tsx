@@ -95,7 +95,7 @@ export function ReceiptUploadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-sm flex-col gap-5">
+      <DialogContent className="flex max-h-[75vh] max-w-sm flex-col gap-5 sm:max-h-[85vh]">
         <DialogHeader className="shrink-0 text-left">
           <DialogTitle>Complete your transfer</DialogTitle>
           <DialogDescription>Week {weekNumber} contribution</DialogDescription>

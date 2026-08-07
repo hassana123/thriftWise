@@ -8,6 +8,7 @@ import { QueryProvider } from "@/providers/query-provider";
 import { ThriftProvider } from "@/providers/thrift-provider";
 import { AuthProvider } from "@/providers/auth-provider";
 import { AppLoading } from "@/components/app-loading";
+import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +29,14 @@ export const metadata: Metadata = {
     "Save together, vacation together. ThriftWise helps families track daily savings, weekly contributions, and progress toward a shared vacation goal.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/icon-192.png",
+    shortcut: "/icon-192.png",
+    apple: "/apple-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "ThriftWise",
+    statusBarStyle: "default",
   },
 };
 
@@ -37,6 +45,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -53,6 +62,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <AuthProvider>
                 <TooltipProvider delayDuration={200}>
                   <AppLoading>{children}</AppLoading>
+                  <PwaInstallPrompt />
                 </TooltipProvider>
               </AuthProvider>
             </ThriftProvider>

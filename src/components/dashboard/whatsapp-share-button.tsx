@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useThrift } from "@/providers/thrift-provider";
-import { LedgerSnapshot } from "@/components/dashboard/ledger-snapshot";
+import { renderLedgerImage } from "@/lib/ledger-image";
 
 export function WhatsAppShareButton({
   variant = "outline",
@@ -22,32 +22,20 @@ export function WhatsAppShareButton({
   className?: string;
 }) {
   const { state } = useThrift();
-  const snapshotRef = React.useRef<HTMLDivElement>(null);
   const [capturing, setCapturing] = React.useState(false);
   const [image, setImage] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
 
   if (!state) return null;
 
-  async function captureImage(): Promise<string | null> {
-    if (!snapshotRef.current) return null;
-    // Give the off-screen node a tick to lay out before capturing.
-    await new Promise((r) => setTimeout(r, 50));
-    const { toPng } = await import("html-to-image");
-    return toPng(snapshotRef.current, {
-      pixelRatio: 2,
-      backgroundColor: "#ffffff",
-      width: snapshotRef.current.offsetWidth,
-      height: snapshotRef.current.offsetHeight,
-    });
-  }
+  const currentState = state;
 
   async function handleShare() {
     if (capturing) return;
     setCapturing(true);
     try {
-      const dataUrl = await captureImage();
-      if (dataUrl) setImage(dataUrl);
+      const dataUrl = await renderLedgerImage(currentState);
+      setImage(dataUrl);
     } finally {
       setCapturing(false);
     }
@@ -95,29 +83,30 @@ export function WhatsAppShareButton({
 
   return (
     <>
-      <LedgerSnapshot ref={snapshotRef} />
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant={variant} size="sm" className={className} onClick={handleShare} disabled={capturing}>
-          {capturing ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Camera className="size-4" />
-          )}
-          {capturing ? "Taking snapshot…" : "Share ledger snapshot"}
+        <Button
+          variant={variant}
+          size="sm"
+          className={className}
+          onClick={handleShare}
+          disabled={capturing}
+        >
+          {capturing ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+          {capturing ? "Creating picture…" : "Share ledger picture"}
         </Button>
       </div>
 
       <Dialog open={image !== null} onOpenChange={(o) => !o && setImage(null)}>
         <DialogContent className="flex max-h-[85vh] max-w-md flex-col gap-4">
           <DialogHeader className="shrink-0 text-left">
-            <DialogTitle>Ledger snapshot</DialogTitle>
+            <DialogTitle>Ledger picture</DialogTitle>
             <DialogDescription>
               Download the image, or share it directly into the WhatsApp group.
             </DialogDescription>
           </DialogHeader>
 
           {image ? (
-            <div className="min-h-0 overflow-y-auto overflow-hidden rounded-xl border bg-white">
+            <div className="min-h-0 overflow-y-auto rounded-xl border bg-white">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={image} alt="Family thrift ledger" className="w-full" />
             </div>
