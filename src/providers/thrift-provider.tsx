@@ -301,11 +301,16 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
           "approved",
           receiptUrl
         );
+        const coveredWeekNumbers = weeks.map((w) => w.week.number);
+        const weeksLabel =
+          coveredWeekNumbers.length > 1
+            ? `Weeks ${coveredWeekNumbers[0]}–${coveredWeekNumbers[coveredWeekNumbers.length - 1]}`
+            : `Week ${coveredWeekNumbers[0]}`;
         return pushActivity(
           { ...prev, payments, savings },
           memberId,
           "payment_approved",
-          `${member?.name ?? "Member"}’s Week ${weeks[0]?.week.number ?? ""} payment was verified automatically (${totalDays} days)`,
+          `${member?.name ?? "Member"}’s ${weeksLabel} payment was verified automatically (${totalDays} days)`,
           receiptAmount
         );
       });

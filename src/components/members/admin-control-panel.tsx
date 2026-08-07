@@ -19,7 +19,7 @@ import { MarkPaidDialog } from "@/components/members/mark-paid-dialog";
 import { useThrift } from "@/providers/thrift-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { getMemberPlan, getWeekPayment, getWeeklyTarget } from "@/domain/calculations";
+import { getMemberPlan, getWeekSavings, getWeeklyTarget } from "@/domain/calculations";
 import { getWeekStatus } from "@/domain/calendar";
 import { STANDARD_PLANS, buildPlan } from "@/domain/constants";
 import type { Member, PlanKey } from "@/domain/types";
@@ -160,19 +160,19 @@ export function AdminControlPanel() {
                           </div>
                         </td>
                         {state.members.map((m) => {
-                          const payment = getWeekPayment(state.payments, m.id, week.id);
-                          const paid = payment?.status === "approved";
-                          const amount = payment?.amount ?? getWeeklyTarget(state, m.id, week);
+                          const weekSaved = getWeekSavings(state.savings, m.id, week.id);
+                          const target = getWeeklyTarget(state, m.id, week);
+                          const complete = target > 0 && weekSaved >= target;
                           const isArmed =
                             armed?.memberId === m.id && armed?.weekId === week.id;
                           return (
                             <td key={m.id} className="px-2 py-2.5 text-center">
-                              {paid ? (
+                              {complete ? (
                                 <span className="inline-flex flex-col items-center gap-1">
                                   <span className="flex items-center gap-1 text-xs font-semibold text-success">
                                     <Check className="size-3.5" /> Paid
                                     <span className="font-normal text-muted-foreground">
-                                      · {formatMoney(amount)}
+                                      · {formatMoney(weekSaved)}
                                     </span>
                                   </span>
                                   <Button
@@ -197,14 +197,21 @@ export function AdminControlPanel() {
                                   </Button>
                                 </span>
                               ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 gap-1 text-xs"
-                                  onClick={() => setMarking({ memberId: m.id, weekId: week.id })}
-                                >
-                                  <HandCoins className="size-3.5" /> Mark paid
-                                </Button>
+                                <span className="inline-flex flex-col items-center gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 gap-1 text-xs"
+                                    onClick={() => setMarking({ memberId: m.id, weekId: week.id })}
+                                  >
+                                    <HandCoins className="size-3.5" /> Mark paid
+                                  </Button>
+                                  {weekSaved > 0 ? (
+                                    <span className="text-[10px] font-medium text-warning">
+                                      {formatMoney(weekSaved)} / {formatMoney(target)} — add more
+                                    </span>
+                                  ) : null}
+                                </span>
                               )}
                             </td>
                           );
@@ -223,9 +230,11 @@ export function AdminControlPanel() {
               </table>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Tap “Mark paid” to record a week that was already settled before the app existed — pick
-              the week and type the exact amount each person sent. Tap “Unmark” to undo a mistake —
-              confirm by tapping again.
+              Tap “Mark paid” to enter the amount that person paid for that week. If it covered days
+              in the next week too (e.g. ₦2,100 = Mon–Fri + Mon/Tue of next week), those are shown
+              and marked automatically. A week only shows <b>Paid</b> once all its Mon–Fri days are
+              covered — until then you can keep adding. Tap “Unmark” to undo a mistake — confirm by
+              tapping again.
             </p>
           </div>
         </CardContent>
@@ -241,7 +250,8 @@ export function AdminControlPanel() {
 
       <MarkPaidDialog
         member={state.members.find((m) => m.id === marking?.memberId) ?? null}
-        weeks={editableWeeks}
+        weeks={state.weeks}
+        startWeekId={marking?.weekId ?? state.weeks[0]?.id ?? ""}
         open={marking !== null}
         onOpenChange={(open) => {
           if (!open) setMarking(null);

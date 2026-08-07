@@ -228,13 +228,14 @@ export interface PaymentSpreadWeek {
   amount: number;
 }
 
-// Spreads a payment across the given week's working days ONLY. Each week is
-// settled independently — money that exceeds a week's target never auto-covers
-// the NEXT week's days. The admin decides when the next week is paid, and a
-// week only becomes complete once ALL its working days (Mon–Fri) are covered.
+// Spreads a payment across consecutive WORKING days, rolling into following
+// weeks. Paying ahead is expected: 7 days means Mon–Fri of this week plus
+// Mon–Tue of the next week — weekends are never counted. Only days that don't
+// already have savings are filled, so a week that was partially covered by an
+// earlier advance payment is completed first before moving on.
 //
 // A day is ALWAYS worth the member's daily rate. The number of days a payment
-// covers comes from the amount (₦1500 at ₦300/day = 5 days), never from a
+// covers comes from the amount (₦2100 at ₦300/day = 7 days), never from a
 // hand-picked day count — so a day can never show a split amount like ₦375 or
 // ₦420.
 export function spreadPayment(
@@ -246,22 +247,75 @@ export function spreadPayment(
   if (amount <= 0) return { weeks: [], savings: state.savings };
   const startIndex = state.weeks.findIndex((w) => w.id === startWeekId);
   if (startIndex < 0) return { weeks: [], savings: state.savings };
-  const week = state.weeks[startIndex];
-  const plan = getPlanForWeek(state, memberId, week);
+  const startWeek = state.weeks[startIndex];
+  const plan = getPlanForWeek(state, memberId, startWeek);
   const daily = plan.dailyAmount || 1;
-  const dates = new Set(week.days.map((d) => d.date));
-  const alreadySaved = new Set(
-    state.savings
-      .filter((s) => s.memberId === memberId && dates.has(s.date))
-      .map((s) => s.date)
-  );
-  const missing = week.days.filter((d) => !alreadySaved.has(d.date));
-  if (missing.length === 0) return { weeks: [], savings: state.savings };
   const totalDays = Math.max(1, Math.round(amount / daily));
-  const covered = Math.min(missing.length, totalDays);
-  const weekAmount = Math.round(daily * covered);
-  const savings = fillWeekSavings(state, memberId, week.id, weekAmount, covered);
-  return { weeks: [{ week, covered, amount: weekAmount }], savings };
+  const perDay = daily;
+  let savings = state.savings;
+  let remainingDays = totalDays;
+  let remainingAmount = amount;
+  const weeks: PaymentSpreadWeek[] = [];
+  let i = startIndex;
+  while (remainingDays > 0 && i < state.weeks.length) {
+    const week = state.weeks[i];
+    const dates = new Set(week.days.map((d) => d.date));
+    const alreadySaved = new Set(
+      savings
+        .filter((s) => s.memberId === memberId && dates.has(s.date))
+        .map((s) => s.date)
+    );
+    const missing = week.days.filter((d) => !alreadySaved.has(d.date));
+    const covered = Math.min(remainingDays, missing.length);
+    if (covered <= 0) {
+      i += 1;
+      continue;
+    }
+    const weekAmount =
+      i === state.weeks.length - 1 ? remainingAmount : Math.round(perDay * covered);
+    weeks.push({ week, covered, amount: weekAmount });
+    savings = fillWeekSavings({ ...state, savings }, memberId, week.id, weekAmount, covered);
+    remainingDays -= covered;
+    remainingAmount -= weekAmount;
+    i += 1;
+  }
+  return { weeks, savings };
+}
+
+// Pure preview of which days an amount would cover, starting from the earliest
+// unpaid day of the given week and rolling forward. Used by the admin mark-paid
+// dialog so the exact covered days are visible before confirming.
+export function planDayCoverage(
+  state: ThriftState,
+  memberId: string,
+  startWeekId: string,
+  amount: number
+): { week: ThriftWeek; dates: string[] }[] {
+  if (amount <= 0) return [];
+  const startIndex = state.weeks.findIndex((w) => w.id === startWeekId);
+  if (startIndex < 0) return [];
+  const plan = getPlanForWeek(state, memberId, state.weeks[startIndex]);
+  const daily = plan.dailyAmount || 1;
+  const totalDays = Math.max(1, Math.round(amount / daily));
+  const alreadySaved = new Set(
+    state.savings.filter((s) => s.memberId === memberId).map((s) => s.date)
+  );
+  const result: { week: ThriftWeek; dates: string[] }[] = [];
+  let remaining = totalDays;
+  let i = startIndex;
+  while (remaining > 0 && i < state.weeks.length) {
+    const week = state.weeks[i];
+    const missing = week.days.filter((d) => !alreadySaved.has(d.date));
+    const take = Math.min(remaining, missing.length);
+    if (take > 0) {
+      const dates = missing.slice(0, take).map((d) => d.date);
+      result.push({ week, dates });
+      for (const d of dates) alreadySaved.add(d);
+      remaining -= take;
+    }
+    i += 1;
+  }
+  return result;
 }
 
 // The day-by-day amount actually saved for a member across a week.
