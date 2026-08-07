@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ReceiptUploadDialog } from "@/components/payments/receipt-upload-dialog";
 import { AdminMarkPaidDialog } from "@/components/dashboard/admin-mark-paid-dialog";
-import { WeekConfirm } from "@/components/dashboard/week-confirm";
 import { CopyButton } from "@/components/copy-button";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
@@ -173,8 +172,6 @@ export function WeeklyPaymentCard() {
             </p>
           </div>
         ) : null}
-
-        <WeekConfirm />
 
         <ReceiptUploadDialog
           open={dialogWeek !== null}
