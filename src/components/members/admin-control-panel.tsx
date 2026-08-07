@@ -242,7 +242,6 @@ export function AdminControlPanel() {
       <MarkPaidDialog
         member={state.members.find((m) => m.id === marking?.memberId) ?? null}
         weeks={editableWeeks}
-        defaultWeekId={marking?.weekId ?? state.weeks[0]?.id ?? ""}
         open={marking !== null}
         onOpenChange={(open) => {
           if (!open) setMarking(null);

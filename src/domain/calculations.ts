@@ -423,3 +423,70 @@ export function applyPaymentAllocation(
   }
   return { weeks, payments, savings };
 }
+
+// Records specific contribution DAYS (possibly spanning several weeks) as paid
+// for a member — the manual, "back-fill the old weeks" path. Each selected day
+// is worth exactly that week's daily rate; already-covered days are skipped.
+// Every touched week gets an approved payment record whose amount mirrors its
+// day-sum, so the ledger, totals and receipt list stay consistent.
+export function recordDaysPaid(
+  state: ThriftState,
+  memberId: string,
+  dates: string[]
+): { savings: DaySaving[]; payments: WeekPayment[]; weekIds: string[] } {
+  const weekByDate = new Map<string, ThriftWeek>();
+  for (const w of state.weeks) {
+    for (const d of w.days) weekByDate.set(d.date, w);
+  }
+  const alreadySaved = new Set(
+    state.savings.filter((s) => s.memberId === memberId).map((s) => s.date)
+  );
+
+  let savings = state.savings;
+  const touched = new Set<string>();
+  for (const date of dates) {
+    if (alreadySaved.has(date)) continue;
+    const week = weekByDate.get(date);
+    if (!week) continue;
+    const plan = getPlanForWeek(state, memberId, week);
+    if (plan.dailyAmount <= 0) continue;
+    savings = [
+      ...savings,
+      { id: `${memberId}-${date}`, memberId, weekId: week.id, date, amount: plan.dailyAmount },
+    ];
+    alreadySaved.add(date);
+    touched.add(week.id);
+  }
+
+  const now = iso(new Date());
+  let payments = state.payments;
+  for (const weekId of touched) {
+    const total = getWeekSavings(savings, memberId, weekId);
+    const existing = payments.find((p) => p.memberId === memberId && p.weekId === weekId);
+    const payment = existing
+      ? {
+          ...existing,
+          amount: total,
+          status: "approved" as const,
+          method: existing.method ?? ("manual" as const),
+          receiptStatus: existing.receiptStatus === "pending" ? existing.receiptStatus : ("approved" as const),
+          approvedAt: existing.approvedAt ?? now,
+        }
+      : {
+          id: `${memberId}-${weekId}`,
+          memberId,
+          weekId,
+          amount: total,
+          status: "approved" as const,
+          method: "manual" as const,
+          receiptStatus: "approved" as const,
+          approvedAt: now,
+          createdAt: now,
+        };
+    payments = existing
+      ? payments.map((p) => (p.id === payment.id ? payment : p))
+      : [...payments, payment];
+  }
+
+  return { savings, payments, weekIds: [...touched] };
+}

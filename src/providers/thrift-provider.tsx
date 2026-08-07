@@ -15,7 +15,7 @@ import { buildPlan, planKeyFromAmount, AVATAR_COLORS } from "@/domain/constants"
 import { getRepository, seedDemoState } from "@/lib/repository";
 import { getSupabaseMode } from "@/lib/supabase/config";
 import { deleteReceipt } from "@/lib/upload";
-import { getTotalTransferred, getWeeklyTarget, getPlanForWeek, getMemberPlan, resyncMemberWeeks, needsDayRepair, resyncAllMembers, applyPaymentAllocation } from "@/domain/calculations";
+import { getTotalTransferred, getWeeklyTarget, getPlanForWeek, getMemberPlan, resyncMemberWeeks, needsDayRepair, resyncAllMembers, applyPaymentAllocation, recordDaysPaid, getSavingsOn } from "@/domain/calculations";
 import { ensureReminders } from "@/domain/reminders";
 import { applyAutoSave } from "@/domain/auto-save";
 
@@ -37,6 +37,7 @@ interface ThriftContextValue {
   approvePayment: (memberId: string, weekId: string) => void;
   rejectPayment: (memberId: string, weekId: string, note?: string) => void;
   markPaidManually: (memberId: string, weekId: string, amount?: number) => void;
+  markDaysPaid: (memberId: string, dates: string[]) => void;
   unmarkPaid: (memberId: string, weekId: string) => void;
   changePlan: (
     memberId: string,
@@ -437,6 +438,32 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
     [pushActivity]
   );
 
+  const markDaysPaid = React.useCallback(
+    (memberId: string, dates: string[]) => {
+      setState((prev) => {
+        if (!prev || dates.length === 0) return prev;
+        const member = prev.members.find((m) => m.id === memberId);
+        const { savings, payments, weekIds } = recordDaysPaid(prev, memberId, dates);
+        const total = dates.reduce((sum, d) => sum + getSavingsOn(savings, memberId, d), 0);
+        const weekLabel = weekIds
+          .map((id) => {
+            const w = prev.weeks.find((x) => x.id === id);
+            return w ? `Week ${w.number}` : null;
+          })
+          .filter(Boolean)
+          .join(" & ");
+        return pushActivity(
+          { ...prev, savings, payments },
+          "hassana",
+          "payment_approved",
+          `${member?.name ?? "Member"} marked ${dates.length} day${dates.length === 1 ? "" : "s"} paid (${weekLabel})`,
+          total
+        );
+      });
+    },
+    [pushActivity]
+  );
+
   const unmarkPaid = React.useCallback(
     (memberId: string, weekId: string) => {
       setState((prev) => {
@@ -782,6 +809,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         approvePayment,
         rejectPayment,
         markPaidManually,
+        markDaysPaid,
         unmarkPaid,
         changePlan,
         addMember,
