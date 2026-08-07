@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftRight, Clock3, HandCoins, Wallet } from "lucide-react";
+import { ArrowLeftRight, Check, Clock3, HandCoins, Wallet, X } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReceiptUploadDialog } from "@/components/payments/receipt-upload-dialog";
 import { AdminMarkPaidDialog } from "@/components/dashboard/admin-mark-paid-dialog";
 import { WeekConfirm } from "@/components/dashboard/week-confirm";
+import { CopyButton } from "@/components/copy-button";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { formatMoney, formatDate } from "@/lib/format";
@@ -31,6 +32,8 @@ export function WeeklyPaymentCard() {
     : undefined;
   const hasPendingReceipt =
     currentPayment?.receiptStatus === "pending" || currentPayment?.status === "pending";
+  const hasReceipt = Boolean(currentPayment?.receiptUrl) || Boolean(currentPayment?.receiptStatus);
+  const isConfirmed = currentPayment?.status === "approved";
 
   return (
     <Card className="relative overflow-hidden">
@@ -51,9 +54,15 @@ export function WeeklyPaymentCard() {
           </div>
           <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
             <p className="text-xs text-primary-foreground/80">Account</p>
-            <p className="font-mono text-sm font-bold tracking-wider">
-              {state.settings.paymentAccount.accountNumber}
-            </p>
+            <div className="flex items-center gap-1">
+              <span className="font-mono text-sm font-bold tracking-wider">
+                {state.settings.paymentAccount.accountNumber}
+              </span>
+              <CopyButton
+                value={state.settings.paymentAccount.accountNumber}
+                className="text-primary-foreground/70 hover:text-white"
+              />
+            </div>
             <p className="text-xs text-primary-foreground/80">{state.settings.paymentAccount.bank}</p>
           </div>
         </div>
@@ -68,11 +77,60 @@ export function WeeklyPaymentCard() {
             <div className="flex-1">
               <p className="text-sm font-semibold">Receipt pending review</p>
               <p className="text-xs text-muted-foreground">
-                {member.name}, your {currentWeek ? `Week ${currentWeek.number}` : ""} transfer is
-                being reviewed by the admin.
+                {member.name}, some receipt details didn’t fully match — the admin will confirm your{" "}
+                {currentWeek ? `Week ${currentWeek.number}` : ""} transfer shortly.
               </p>
             </div>
             <Badge variant="warning">Pending</Badge>
+          </div>
+        ) : isConfirmed ? (
+          <div className="flex items-center gap-4 rounded-2xl border border-success/30 bg-success/5 p-4">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-success/15 text-success">
+              <Check className="size-5" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold">Week {currentWeek?.number} confirmed</p>
+              <p className="text-xs text-muted-foreground">
+                {formatMoney(currentPayment?.amount ?? weeklyTarget)} recorded for this week. One
+                receipt per week — you’re all set.
+              </p>
+            </div>
+            <Badge variant="success">Paid</Badge>
+          </div>
+        ) : currentPayment?.receiptStatus === "rejected" ? (
+          <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex size-11 items-center justify-center rounded-xl bg-destructive/15 text-destructive">
+                <X className="size-5" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold">Receipt was not accepted</p>
+                <p className="text-xs text-muted-foreground">
+                  {currentPayment.adminNote ??
+                    "The admin couldn’t verify this receipt. Please re-upload a clearer one."}
+                </p>
+              </div>
+              <Badge variant="destructive">Rejected</Badge>
+            </div>
+            <Button
+              size="lg"
+              className="w-full gap-2"
+              onClick={() => setDialogWeek(currentWeek?.id ?? "")}
+            >
+              <ArrowLeftRight className="size-4" /> Re-upload receipt for Week {currentWeek?.number}
+            </Button>
+          </div>
+        ) : hasReceipt ? (
+          <div className="flex items-center gap-4 rounded-2xl border bg-muted/40 p-4">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <HandCoins className="size-5" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold">Receipt already uploaded</p>
+              <p className="text-xs text-muted-foreground">
+                Only one receipt per week is allowed for Week {currentWeek?.number}.
+              </p>
+            </div>
           </div>
         ) : currentWeek ? (
           <div className="space-y-3 rounded-2xl border p-4">
@@ -87,20 +145,21 @@ export function WeeklyPaymentCard() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Account number</p>
-                <p className="font-mono font-bold tracking-wider">
-                  {state.settings.paymentAccount.accountNumber}
-                </p>
+                <div className="flex items-center gap-1">
+                  <span className="font-mono font-bold tracking-wider">
+                    {state.settings.paymentAccount.accountNumber}
+                  </span>
+                  <CopyButton value={state.settings.paymentAccount.accountNumber} />
+                </div>
               </div>
             </div>
-            {!isAdmin ? (
-              <Button
-                size="lg"
-                className="w-full gap-2"
-                onClick={() => setDialogWeek(currentWeek.id)}
-              >
-                <ArrowLeftRight className="size-4" /> I&apos;ve transferred · upload receipt
-              </Button>
-            ) : null}
+            <Button
+              size="lg"
+              className="w-full gap-2"
+              onClick={() => setDialogWeek(currentWeek.id)}
+            >
+              <ArrowLeftRight className="size-4" /> I&apos;ve transferred · upload receipt
+            </Button>
           </div>
         ) : null}
 

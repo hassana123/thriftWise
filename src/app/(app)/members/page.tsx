@@ -8,7 +8,7 @@ import {
   createColumnHelper,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ShieldCheck, UserCheck, UserPlus, UserX } from "lucide-react";
+import { ShieldCheck, UserCheck, UserPlus, UserX, ChevronUp, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -88,10 +88,40 @@ const columnHelper = createColumnHelper<Row>();
 
 function MemberTable({ rows }: { rows: Row[] }) {
   const { member: me } = useAuth();
+  const { moveMember } = useThrift();
   const isAdmin = me?.role === "admin";
 
   const columns = React.useMemo<ColumnDef<Row>[]>(
     () => [
+      columnHelper.display({
+        id: "move",
+        header: () => <span className="sr-only">Position</span>,
+        cell: ({ row }) => {
+          const m = row.original.member;
+          return (
+            <div className="flex flex-col">
+              <button
+                type="button"
+                aria-label={`Move ${m.name} up`}
+                disabled={row.index === 0}
+                onClick={() => moveMember(m.id, "up")}
+                className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronUp className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Move ${m.name} down`}
+                disabled={row.index === rows.length - 1}
+                onClick={() => moveMember(m.id, "down")}
+                className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronDown className="size-4" />
+              </button>
+            </div>
+          );
+        },
+      }),
       columnHelper.display({
         id: "member",
         header: "Member",
@@ -171,7 +201,7 @@ function MemberTable({ rows }: { rows: Row[] }) {
           ]
         : []),
     ],
-    [isAdmin]
+    [isAdmin, moveMember, rows.length]
   );
 
   const table = useReactTable({

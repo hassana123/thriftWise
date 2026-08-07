@@ -11,6 +11,7 @@ import { StaggerItem } from "@/components/page-transition";
 import { WeeklyPaymentCard } from "@/components/dashboard/weekly-payment-card";
 import { LedgerPreview } from "@/components/dashboard/ledger-preview";
 import { ConfirmPayments } from "@/components/dashboard/confirm-payments";
+import { WhatsAppShareButton } from "@/components/dashboard/whatsapp-share-button";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { initials, formatMoney } from "@/lib/format";
@@ -65,6 +66,11 @@ export default function DashboardPage() {
             {daysLeft} {daysLeft === 1 ? "day" : "days"} to go
           </Badge>
         </div>
+        {isAdmin ? (
+          <div className="mt-3">
+            <WhatsAppShareButton />
+          </div>
+        ) : null}
       </StaggerItem>
 
       <WeeklyPaymentCard />

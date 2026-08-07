@@ -69,9 +69,11 @@ export function WeekConfirm() {
             <Badge variant="success" className="gap-1">
               <Check className="size-3.5" /> Done
             </Badge>
-            <Button size="sm" variant="ghost" className="gap-1 text-xs" onClick={() => unmarkPaid(member.id, week.id)}>
-              <Undo2 className="size-3.5" /> Undo
-            </Button>
+            {isAdmin ? (
+              <Button size="sm" variant="ghost" className="gap-1 text-xs" onClick={() => unmarkPaid(member.id, week.id)}>
+                <Undo2 className="size-3.5" /> Undo
+              </Button>
+            ) : null}
           </div>
         ) : arming ? (
           <div className="flex gap-2">

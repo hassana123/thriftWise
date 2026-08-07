@@ -223,7 +223,8 @@ export default function SettingsPage() {
                 <div>
                   <p className="text-sm font-medium">Start over from scratch</p>
                   <p className="text-xs text-muted-foreground">
-                    Erase all thrift data and set up a new one from onboarding
+                    Clear all thrift data (family, weeks, payments) and set up a new one from
+                    onboarding — you stay signed in as admin.
                   </p>
                 </div>
                 {confirmClear ? (
@@ -233,8 +234,8 @@ export default function SettingsPage() {
                       variant="destructive"
                       onClick={async () => {
                         await clearAll();
-                        await signOut();
-                        router.replace("/login");
+                        setConfirmClear(false);
+                        router.replace("/onboarding");
                       }}
                     >
                       Yes, erase everything

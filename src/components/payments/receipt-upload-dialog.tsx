@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Check, ImagePlus, Loader2, PartyPopper } from "lucide-react";
+import { Check, ImagePlus, Loader2, PartyPopper, ShieldCheck } from "lucide-react";
 
 import {
   Dialog,
@@ -13,12 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn, namesMatch } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { useConfetti } from "@/components/confetti";
 import { uploadReceipt } from "@/lib/upload";
+import { CopyButton } from "@/components/copy-button";
 
 export function ReceiptUploadDialog({
   open,
@@ -42,16 +43,22 @@ export function ReceiptUploadDialog({
   const [confirmed, setConfirmed] = React.useState(false);
   const [file, setFile] = React.useState<File | null>(null);
   const [receiptAmount, setReceiptAmount] = React.useState<string>("");
+  const [senderName, setSenderName] = React.useState("");
+  const [accountNumber, setAccountNumber] = React.useState("");
   const [uploading, setUploading] = React.useState(false);
   const [done, setDone] = React.useState(false);
+  const [wasAutoApproved, setWasAutoApproved] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setConfirmed(false);
       setFile(null);
       setReceiptAmount(amount > 0 ? String(amount) : "");
+      setSenderName(member?.name ?? "");
+      setAccountNumber(account.accountNumber);
       setUploading(false);
       setDone(false);
+      setWasAutoApproved(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -61,12 +68,24 @@ export function ReceiptUploadDialog({
     return Number.isFinite(num) && num > 0 ? num : 0;
   }, [receiptAmount]);
 
+  const nameOk = React.useMemo(
+    () => Boolean(member) && namesMatch(senderName, member?.name ?? ""),
+    [senderName, member]
+  );
+  const amountOk = enteredAmount > 0;
+  const accountOk = React.useMemo(
+    () => accountNumber.replace(/\s+/g, "") === account.accountNumber.replace(/\s+/g, ""),
+    [accountNumber, account.accountNumber]
+  );
+  const allVerified = nameOk && amountOk && accountOk;
+
   async function handleSubmit() {
     if (!member || !file) return;
     setUploading(true);
     try {
       const url = await uploadReceipt(file, member.id, weekId);
-      saveReceipt(member.id, weekId, url, enteredAmount || undefined);
+      saveReceipt(member.id, weekId, url, enteredAmount || undefined, allVerified);
+      setWasAutoApproved(allVerified);
       setDone(true);
       fireConfetti();
     } finally {
@@ -92,10 +111,23 @@ export function ReceiptUploadDialog({
               <PartyPopper className="size-10 text-primary" />
             </div>
             <div>
-              <p className="text-lg font-bold">Receipt submitted!</p>
+              <p className="text-lg font-bold">
+                {wasAutoApproved ? "Week automatically confirmed!" : "Receipt submitted!"}
+              </p>
               <p className="text-sm text-muted-foreground">
-                Your payment is now <span className="font-semibold text-foreground">pending review</span>.
-                The admin will approve it shortly.
+                {wasAutoApproved ? (
+                  <>
+                    All details matched — Week {weekNumber} is now{" "}
+                    <span className="font-semibold text-foreground">marked as paid</span>. No review
+                    needed.
+                  </>
+                ) : (
+                  <>
+                    Your payment is now{" "}
+                    <span className="font-semibold text-foreground">pending review</span>. The admin
+                    will approve it shortly.
+                  </>
+                )}
               </p>
             </div>
             <Button className="w-full" onClick={() => onOpenChange(false)}>
@@ -123,7 +155,57 @@ export function ReceiptUploadDialog({
                 />
               </div>
               <p className="mt-1.5 text-xs text-primary-foreground/70">
-                Enter exactly what the receipt shows — that amount will be recorded once approved.
+                Enter exactly what the receipt shows — that amount will be recorded.
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <ShieldCheck className="size-4 text-primary" /> Auto-verification
+              </p>
+
+              <div>
+                <p className="mb-1 text-xs text-muted-foreground">Sender name on receipt</p>
+                <Input
+                  value={senderName}
+                  onChange={(e) => setSenderName(e.target.value)}
+                  placeholder="Your name as it appears on the receipt"
+                />
+                <p
+                  className={cn(
+                    "mt-1 text-xs",
+                    nameOk ? "text-success" : "text-warning"
+                  )}
+                >
+                  {nameOk
+                    ? "Matches your account name."
+                    : "Does not match your account name yet."}
+                </p>
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs text-muted-foreground">Account number it was sent to</p>
+                <Input
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  inputMode="numeric"
+                  placeholder={account.accountNumber}
+                />
+                <p
+                  className={cn(
+                    "mt-1 text-xs",
+                    accountOk ? "text-success" : "text-warning"
+                  )}
+                >
+                  {accountOk
+                    ? `Matches the family ${account.bank} account.`
+                    : `Does not match the family ${account.bank} account.`}
+                </p>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                When all three details match, this week is confirmed automatically — no admin review
+                needed.
               </p>
             </div>
 
@@ -136,9 +218,12 @@ export function ReceiptUploadDialog({
                 <span className="text-muted-foreground">Account name</span>
                 <span className="font-semibold">{account.accountName}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Account number</span>
-                <span className="font-mono font-bold tracking-wider">{account.accountNumber}</span>
+                <span className="flex items-center gap-1 font-mono font-bold tracking-wider">
+                  {account.accountNumber}
+                  <CopyButton value={account.accountNumber} />
+                </span>
               </div>
             </div>
 
@@ -185,8 +270,17 @@ export function ReceiptUploadDialog({
               onClick={handleSubmit}
             >
               {uploading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-              {uploading ? "Uploading…" : "Submit for review"}
+              {uploading
+                ? "Uploading…"
+                : allVerified
+                  ? "Submit & confirm week"
+                  : "Submit for review"}
             </Button>
+            {!allVerified ? (
+              <p className="text-center text-xs text-warning">
+                Some details don’t match yet — this will need a quick admin review.
+              </p>
+            ) : null}
           </div>
         )}
       </DialogContent>

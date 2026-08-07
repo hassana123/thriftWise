@@ -9,6 +9,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ContributionCalendar } from "@/components/dashboard/contribution-calendar";
 import { MonthlyTrend } from "@/components/dashboard/monthly-trend";
 import { useThrift } from "@/providers/thrift-provider";
+import { useAuth } from "@/providers/auth-provider";
+import { WhatsAppShareButton } from "@/components/dashboard/whatsapp-share-button";
 import { formatMoney, formatMoneyCompact, formatDate, initials } from "@/lib/format";
 import {
   getCollectionRate,
@@ -23,8 +25,11 @@ import type { PaymentStatus, ThriftState } from "@/domain/types";
 
 export default function AnalyticsPage() {
   const { state } = useThrift();
+  const { member } = useAuth();
 
   if (!state) return null;
+
+  const isAdmin = member?.role === "admin";
 
   const familySavings = getFamilySavings(state);
   const familyTransferred = getFamilyTransferred(state);
@@ -42,6 +47,11 @@ export default function AnalyticsPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Simple numbers for the whole family — no jargon.
         </p>
+        {isAdmin ? (
+          <div className="mt-3">
+            <WhatsAppShareButton />
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

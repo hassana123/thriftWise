@@ -33,9 +33,10 @@ export function ConfirmPayments() {
               <Check className="size-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold">All receipts reviewed</p>
+              <p className="text-sm font-semibold">All payments verified automatically</p>
               <p className="text-xs text-muted-foreground">
-                New uploads will appear here. Approving records the amount shown on the receipt.
+                Receipts whose sender, amount and account match are confirmed instantly. Uploads
+                that don’t fully match land here for a quick review.
               </p>
             </div>
           </div>

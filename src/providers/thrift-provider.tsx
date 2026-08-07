@@ -27,7 +27,13 @@ interface ThriftContextValue {
   mode: "supabase" | "demo";
   memberLookup: (id: string) => Member | null;
   recordSaving: (memberId: string, date: string, amount: number) => void;
-  uploadReceipt: (memberId: string, weekId: string, receiptUrl: string, amount?: number) => void;
+  uploadReceipt: (
+    memberId: string,
+    weekId: string,
+    receiptUrl: string,
+    amount?: number,
+    autoApproved?: boolean
+  ) => void;
   approvePayment: (memberId: string, weekId: string) => void;
   rejectPayment: (memberId: string, weekId: string, note?: string) => void;
   markPaidManually: (memberId: string, weekId: string, amount?: number) => void;
@@ -39,6 +45,7 @@ interface ThriftContextValue {
   ) => number | undefined;
   addMember: (input: { name: string; email?: string; plan: ContributionPlan; daysPerWeek?: number }) => void;
   updateMember: (memberId: string, patch: { name?: string; email?: string; daysPerWeek?: number }) => void;
+  moveMember: (memberId: string, direction: "up" | "down") => void;
   assignAdmin: (memberId: string) => void;
   markNotificationsRead: () => void;
   createThrift: (input: OnboardingInput) => void;
@@ -48,6 +55,8 @@ interface ThriftContextValue {
 }
 
 const ThriftContext = React.createContext<ThriftContextValue | undefined>(undefined);
+
+const CLEAR_FLAG_KEY = "thriftwise-cleared";
 
 export function ThriftProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<ThriftState | null>(null);
@@ -64,7 +73,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
       const repo = getRepository();
       let loaded = await repo.load();
       if (!loaded) {
-        if (repo.mode === "demo") {
+        if (repo.mode === "demo" && !window.localStorage.getItem(CLEAR_FLAG_KEY)) {
           loaded = seedDemoState();
           repo.save(loaded);
         }
@@ -213,7 +222,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
   );
 
   const uploadReceipt = React.useCallback(
-    (memberId: string, weekId: string, receiptUrl: string, amount?: number) => {
+    (memberId: string, weekId: string, receiptUrl: string, amount?: number, autoApproved?: boolean) => {
       setState((prev) => {
         if (!prev) return prev;
         const week = prev.weeks.find((w) => w.id === weekId);
@@ -223,23 +232,27 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         const existing = prev.payments.find(
           (p) => p.memberId === memberId && p.weekId === weekId
         );
+        const isAutoApproved = Boolean(autoApproved) && receiptAmount > 0;
+        const status = isAutoApproved ? ("approved" as const) : ("pending" as const);
         const payment = existing
           ? {
               ...existing,
               amount: receiptAmount || existing.amount,
               receiptUrl,
-              receiptStatus: "pending" as const,
-              status: "pending" as const,
+              receiptStatus: status,
+              status,
+              approvedAt: isAutoApproved ? iso(new Date()) : existing.approvedAt,
             }
           : {
               id: `${memberId}-${weekId}`,
               memberId,
               weekId,
               amount: receiptAmount,
-              status: "pending" as const,
+              status,
               method: "transfer" as const,
               receiptUrl,
-              receiptStatus: "pending" as const,
+              receiptStatus: status,
+              approvedAt: isAutoApproved ? iso(new Date()) : undefined,
               createdAt: iso(new Date()),
             };
         const payments = existing
@@ -255,8 +268,10 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         return pushActivity(
           { ...prev, payments, savings },
           memberId,
-          "payment_uploaded",
-          `${member?.name ?? "Member"} uploaded a receipt for Week ${week?.number ?? ""}`,
+          isAutoApproved ? "payment_approved" : "payment_uploaded",
+          isAutoApproved
+            ? `${member?.name ?? "Member"}’s Week ${week?.number ?? ""} payment was verified automatically`
+            : `${member?.name ?? "Member"} uploaded a receipt for Week ${week?.number ?? ""}`,
           payment.amount
         );
       });
@@ -587,6 +602,20 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
     [pushActivity]
   );
 
+  const moveMember = React.useCallback((memberId: string, direction: "up" | "down") => {
+    setState((prev) => {
+      if (!prev) return prev;
+      const index = prev.members.findIndex((m) => m.id === memberId);
+      if (index < 0) return prev;
+      const target = index + (direction === "up" ? -1 : 1);
+      if (target < 0 || target >= prev.members.length) return prev;
+      const members = [...prev.members];
+      const [a] = members.splice(index, 1);
+      members.splice(target, 0, a);
+      return { ...prev, members };
+    });
+  }, []);
+
   const markNotificationsRead = React.useCallback(() => {
     setState((prev) => {
       if (!prev || !prev.notifications.some((n) => !n.read)) return prev;
@@ -647,6 +676,13 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
     thrift.weeks = generateWeeks(settings);
     setState(thrift);
 
+    // A fresh thrift is the end of a "start over" — allow demo re-seed again.
+    try {
+      window.localStorage.removeItem(CLEAR_FLAG_KEY);
+    } catch {
+      /* ignore */
+    }
+
     // Link the signed-in email admin to the new admin member so their profile
     // resolves after onboarding. Name sign-in members don't need a profile row.
     if (getSupabaseMode() === "supabase") {
@@ -691,6 +727,11 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
   // Wipes all saved data so the app can start again from scratch (onboarding).
   const clearAll = React.useCallback(async () => {
     await repository.reset();
+    try {
+      window.localStorage.setItem(CLEAR_FLAG_KEY, "1");
+    } catch {
+      /* ignore */
+    }
     setState(null);
   }, [repository]);
 
@@ -711,6 +752,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         changePlan,
         addMember,
         updateMember,
+        moveMember,
         assignAdmin,
         markNotificationsRead,
         createThrift,
