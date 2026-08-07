@@ -1,0 +1,10 @@
+export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+export function isSupabaseConfigured(): boolean {
+  return Boolean(supabaseUrl && supabaseAnonKey);
+}
+
+export function getSupabaseMode(): "supabase" | "demo" {
+  return isSupabaseConfigured() ? "supabase" : "demo";
+}

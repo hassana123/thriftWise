@@ -1,0 +1,16 @@
+{
+  "name": "ThriftWise — Family Vacation Thrift",
+  "short_name": "ThriftWise",
+  "description": "Save together, vacation together.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16A34A",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}
