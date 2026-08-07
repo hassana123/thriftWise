@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EditMemberDialog } from "@/components/members/edit-member-dialog";
+import { MarkPaidDialog } from "@/components/members/mark-paid-dialog";
 import { useThrift } from "@/providers/thrift-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -24,10 +25,11 @@ import { STANDARD_PLANS, buildPlan } from "@/domain/constants";
 import type { Member, PlanKey } from "@/domain/types";
 
 export function AdminControlPanel() {
-  const { state, changePlan, markPaidManually, unmarkPaid } = useThrift();
+  const { state, changePlan, unmarkPaid } = useThrift();
   const [edited, setEdited] = React.useState<Record<string, string>>({});
   const [editing, setEditing] = React.useState<Member | null>(null);
   const [armed, setArmed] = React.useState<{ memberId: string; weekId: string } | null>(null);
+  const [marking, setMarking] = React.useState<{ memberId: string; weekId: string } | null>(null);
 
   if (!state) return null;
 
@@ -199,7 +201,7 @@ export function AdminControlPanel() {
                                   size="sm"
                                   variant="outline"
                                   className="h-8 gap-1 text-xs"
-                                  onClick={() => markPaidManually(m.id, week.id)}
+                                  onClick={() => setMarking({ memberId: m.id, weekId: week.id })}
                                 >
                                   <HandCoins className="size-3.5" /> Mark paid
                                 </Button>
@@ -221,8 +223,9 @@ export function AdminControlPanel() {
               </table>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Tap “Mark paid” to record a week that was already settled before the app existed. Tap
-              “Unmark” to undo a mistake — confirm by tapping again.
+              Tap “Mark paid” to record a week that was already settled before the app existed — pick
+              the week and type the exact amount each person sent. Tap “Unmark” to undo a mistake —
+              confirm by tapping again.
             </p>
           </div>
         </CardContent>
@@ -233,6 +236,16 @@ export function AdminControlPanel() {
         open={editing !== null}
         onOpenChange={(open) => {
           if (!open) setEditing(null);
+        }}
+      />
+
+      <MarkPaidDialog
+        member={state.members.find((m) => m.id === marking?.memberId) ?? null}
+        weeks={editableWeeks}
+        defaultWeekId={marking?.weekId ?? state.weeks[0]?.id ?? ""}
+        open={marking !== null}
+        onOpenChange={(open) => {
+          if (!open) setMarking(null);
         }}
       />
     </div>

@@ -4,7 +4,6 @@ import * as React from "react";
 
 import type {
   ContributionPlan,
-  DaySaving,
   Member,
   OnboardingInput,
   PlanChangeScope,
@@ -16,7 +15,7 @@ import { buildPlan, planKeyFromAmount, AVATAR_COLORS } from "@/domain/constants"
 import { getRepository, seedDemoState } from "@/lib/repository";
 import { getSupabaseMode } from "@/lib/supabase/config";
 import { deleteReceipt } from "@/lib/upload";
-import { getTotalTransferred, getWeeklyTarget, spreadPayment, getPlanForWeek, getMemberPlan, resyncMemberWeeks, getWeekSavings } from "@/domain/calculations";
+import { getTotalTransferred, getWeeklyTarget, getPlanForWeek, getMemberPlan, resyncMemberWeeks, needsDayRepair, resyncAllMembers, applyPaymentAllocation } from "@/domain/calculations";
 import { ensureReminders } from "@/domain/reminders";
 import { applyAutoSave } from "@/domain/auto-save";
 
@@ -80,7 +79,15 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (!cancelled) {
-        setState(loaded?.thrift ? ensureReminders(loaded.thrift) : null);
+        let t = loaded?.thrift ? ensureReminders(loaded.thrift) : null;
+        // Self-heal day amounts corrupted by the old amount-splitting logic
+        // (e.g. ₦375/₦420 days) by rebuilding each member's day coverage from
+        // their payments at the correct daily rate.
+        if (t && mode !== "demo" && needsDayRepair(t)) {
+          t = ensureReminders(resyncAllMembers(t));
+          void repo.save({ version: 1, thrift: t });
+        }
+        setState(t);
         setIsReloading(false);
       }
     };
@@ -235,56 +242,65 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         // 7 days = this week + Mon/Tue next week, 10 days = two full weeks.
         // Weekends are never counted — only working days across consecutive weeks.
         const defaultDays = startWeek.days.length || 5;
-        const totalDays = daysCovered && daysCovered > 0 ? Math.floor(daysCovered) : defaultDays;
-        const receiptAmount = amount && amount > 0 ? amount : plan.dailyAmount * totalDays;
+        const selectedDays = daysCovered && daysCovered > 0 ? Math.floor(daysCovered) : defaultDays;
+        const receiptAmount = amount && amount > 0 ? amount : plan.dailyAmount * selectedDays;
+        // The amount decides how many days are covered: ₦3000 at ₦300/day = 10
+        // days, ₦2100 = 7 days. Each day stays at the daily rate — the selected
+        // day count never divides the money, so days can't become ₦375/₦420.
+        const totalDays = Math.max(1, Math.round(receiptAmount / (plan.dailyAmount || 1)));
         const isAutoApproved = Boolean(autoApproved) && receiptAmount > 0;
-        const status = isAutoApproved ? ("approved" as const) : ("pending" as const);
-        const now = iso(new Date());
+        const member = prev.members.find((m) => m.id === memberId);
 
-        const { weeks, savings } = spreadPayment(
-          { ...prev, savings: prev.savings, payments: prev.payments },
-          memberId,
-          weekId,
-          receiptAmount,
-          totalDays
-        );
-        const coveredWeekNumbers = weeks.map((w) => w.week.number);
-
-        // Each covered week's payment record mirrors the days covered inside it
-        // (its day-sum), so records stay consistent with the day-by-day ledger.
-        let payments = prev.payments;
-        for (const { week } of weeks) {
-          const weekAmount = getWeekSavings(savings, memberId, week.id);
-          const existing = payments.find(
-            (p) => p.memberId === memberId && p.weekId === week.id
+        if (!isAutoApproved) {
+          // Pending receipt: record it for admin review but DON'T allocate days
+          // yet — allocation only happens once the payment is verified.
+          const existing = prev.payments.find(
+            (p) => p.memberId === memberId && p.weekId === weekId
           );
+          const now = iso(new Date());
           const payment = existing
             ? {
                 ...existing,
-                amount: weekAmount,
+                amount: receiptAmount,
                 receiptUrl,
-                receiptStatus: status,
-                status,
-                approvedAt: isAutoApproved ? now : existing.approvedAt,
+                receiptStatus: "pending" as const,
+                status: "pending" as const,
+                approvedAt: undefined,
               }
             : {
-                id: `${memberId}-${week.id}`,
+                id: `${memberId}-${weekId}`,
                 memberId,
-                weekId: week.id,
-                amount: weekAmount,
-                status,
+                weekId,
+                amount: receiptAmount,
+                status: "pending" as const,
                 method: "transfer" as const,
                 receiptUrl,
-                receiptStatus: status,
-                approvedAt: isAutoApproved ? now : undefined,
+                receiptStatus: "pending" as const,
                 createdAt: now,
               };
-          payments = existing
-            ? payments.map((p) => (p.id === payment.id ? payment : p))
-            : [...payments, payment];
+          const payments = existing
+            ? prev.payments.map((p) => (p.id === payment.id ? payment : p))
+            : [...prev.payments, payment];
+          return pushActivity(
+            { ...prev, payments },
+            memberId,
+            "payment_uploaded",
+            `${member?.name ?? "Member"} uploaded a receipt covering ${totalDays} days (${plan.label})`,
+            receiptAmount
+          );
         }
 
-        const member = prev.members.find((m) => m.id === memberId);
+        // Verified automatically — allocate across the earliest unpaid days and
+        // keep every covered week's record in sync with its day-sum.
+        const { weeks, payments, savings } = applyPaymentAllocation(
+          prev,
+          memberId,
+          weekId,
+          receiptAmount,
+          "approved",
+          receiptUrl
+        );
+        const coveredWeekNumbers = weeks.map((w) => w.week.number);
         const weeksLabel =
           coveredWeekNumbers.length > 1
             ? `Weeks ${coveredWeekNumbers[0]}–${coveredWeekNumbers[coveredWeekNumbers.length - 1]}`
@@ -292,10 +308,8 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         return pushActivity(
           { ...prev, payments, savings },
           memberId,
-          isAutoApproved ? "payment_approved" : "payment_uploaded",
-          isAutoApproved
-            ? `${member?.name ?? "Member"}’s ${weeksLabel} payment was verified automatically (${totalDays} days)`
-            : `${member?.name ?? "Member"} uploaded a receipt covering ${totalDays} days (${weeksLabel})`,
+          "payment_approved",
+          `${member?.name ?? "Member"}’s ${weeksLabel} payment was verified automatically (${totalDays} days)`,
           receiptAmount
         );
       });
@@ -319,39 +333,69 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
           void deleteReceipt(target.receiptUrl);
         }
         const week = prev.weeks.find((w) => w.id === weekId);
-        const approvedAmount = week ? getWeeklyTarget(prev, memberId, week) : 0;
+        const member = prev.members.find((m) => m.id === memberId);
+
+        if (status === "approved") {
+          // Verification is what allocates days. The payment's own amount (a
+          // pending receipt stored the full receipt value) decides how many
+          // days to cover, rolling into the next week(s) as needed.
+          const fallback = week ? getWeeklyTarget(prev, memberId, week) : 0;
+          const amount = target?.amount && target.amount > 0 ? target.amount : fallback;
+          const { payments, savings } = applyPaymentAllocation(
+            prev,
+            memberId,
+            weekId,
+            amount,
+            "approved",
+            target?.receiptUrl
+          );
+          const approved = payments.find(
+            (p) => p.memberId === memberId && p.weekId === weekId
+          );
+          return pushActivity(
+            { ...prev, payments, savings },
+            "hassana",
+            "payment_approved",
+            `${member?.name ?? "Member"}’s Week ${week?.number ?? ""} payment was approved`,
+            approved?.amount ?? amount
+          );
+        }
+
+        // Rejection: mark the record rejected and undo any days it covered.
+        const receiptUrl = target?.receiptUrl;
+        const affected = prev.payments.filter(
+          (p) =>
+            p.memberId === memberId &&
+            (p.weekId === weekId || (receiptUrl && p.receiptUrl === receiptUrl))
+        );
+        const affectedIds = new Set(affected.map((p) => p.id));
         const payments = prev.payments.map((p) =>
-          p.memberId === memberId && p.weekId === weekId
+          affectedIds.has(p.id)
             ? {
                 ...p,
-                amount: status === "approved" && !p.amount ? approvedAmount : p.amount,
-                status,
-                receiptStatus: status as "approved" | "rejected",
+                status: "rejected" as const,
+                receiptStatus: "rejected" as const,
                 adminNote: note ?? p.adminNote,
-                approvedAt: status === "approved" ? iso(new Date()) : p.approvedAt,
+                approvedAt: undefined,
               }
             : p
         );
-        const member = prev.members.find((m) => m.id === memberId);
-        const approved = payments.find((p) => p.memberId === memberId && p.weekId === weekId);
-        let nextState: ThriftState = { ...prev, payments };
-        if (status === "rejected") {
-          const weekDates = new Set((week?.days ?? []).map((d) => d.date));
-          nextState = {
-            ...nextState,
-            savings: nextState.savings.filter(
-              (s) => !(s.memberId === memberId && weekDates.has(s.date))
-            ),
-          };
-        }
+        const affectedWeekIds = new Set(affected.map((p) => p.weekId));
+        const weekDates = new Set(
+          prev.weeks
+            .filter((w) => affectedWeekIds.has(w.id))
+            .flatMap((w) => w.days)
+            .map((d) => d.date)
+        );
+        const savings = prev.savings.filter(
+          (s) => !(s.memberId === memberId && weekDates.has(s.date))
+        );
         return pushActivity(
-          nextState,
+          { ...prev, payments, savings },
           "hassana",
-          status === "approved" ? "payment_approved" : "payment_rejected",
-          `${member?.name ?? "Member"}’s Week ${week?.number ?? ""} payment was ${
-            status === "approved" ? "approved" : "rejected"
-          }`,
-          approved?.amount
+          "payment_rejected",
+          `${member?.name ?? "Member"}’s Week ${week?.number ?? ""} payment was rejected`,
+          target?.amount
         );
       });
     },
@@ -373,47 +417,16 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
     (memberId: string, weekId: string, customAmount?: number) => {
       setState((prev) => {
         if (!prev) return prev;
-        const existing = prev.payments.find(
-          (p) => p.memberId === memberId && p.weekId === weekId
-        );
         const week = prev.weeks.find((w) => w.id === weekId);
         const plan = week ? getPlanForWeek(prev, memberId, week) : getMemberPlan(prev, memberId);
         const amount =
           customAmount || (week ? getWeeklyTarget(prev, memberId, week) : plan.dailyAmount * 5);
-        const payment = existing
-          ? { ...existing, amount, status: "approved" as const, method: "manual" as const, approvedAt: iso(new Date()), receiptStatus: "approved" as const }
-          : {
-              id: `${memberId}-${weekId}`,
-              memberId,
-              weekId,
-              amount,
-              status: "approved" as const,
-              method: "manual" as const,
-              receiptStatus: "approved" as const,
-              createdAt: iso(new Date()),
-              approvedAt: iso(new Date()),
-            };
-        const payments = existing
-          ? prev.payments.map((p) => (p.id === payment.id ? payment : p))
-          : [...prev.payments, payment];
         const member = prev.members.find((m) => m.id === memberId);
-        const weekDays = week?.days ?? [];
-        const weekDates = new Set(weekDays.map((d) => d.date));
-        const alreadySaved = new Set(
-          prev.savings.filter((s) => s.memberId === memberId && weekDates.has(s.date)).map((s) => s.date)
-        );
-        const missingDays = weekDays.filter((d) => !alreadySaved.has(d.date));
-        const baseDaily = missingDays.length > 0 ? Math.floor(amount / missingDays.length) : 0;
-        const remainder = amount - baseDaily * missingDays.length;
-        const newSavings: DaySaving[] = missingDays.map((d, i) => ({
-          id: `${memberId}-${d.date}`,
-          memberId,
-          weekId,
-          date: d.date,
-          amount: baseDaily + (i === missingDays.length - 1 ? remainder : 0),
-        }));
+        // Fill the week's days at the member's daily rate, rolling into the
+        // next week(s) when the confirmed amount covers extra days.
+        const { payments, savings } = applyPaymentAllocation(prev, memberId, weekId, amount, "approved");
         return pushActivity(
-          { ...prev, payments, savings: [...prev.savings, ...newSavings] },
+          { ...prev, payments, savings },
           "hassana",
           "payment_approved",
           `${member?.name ?? "Member"} confirmed Week ${week?.number ?? ""} as paid`,

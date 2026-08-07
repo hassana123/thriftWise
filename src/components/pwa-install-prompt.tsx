@@ -19,12 +19,31 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 const INSTALLED_KEY = "tw-pwa-installed";
+// Only prompt once per browser session (per tab), not on every page you visit.
+// Cleared when the session ends, so a fresh visit the next day can ask again.
+const PROMPTED_SESSION_KEY = "tw-pwa-prompted-session";
 
 function isStandalone() {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
     (window.navigator as unknown as { standalone?: boolean }).standalone === true
   );
+}
+
+function markPromptedThisSession() {
+  try {
+    sessionStorage.setItem(PROMPTED_SESSION_KEY, "1");
+  } catch {
+    /* storage unavailable — prompt again next navigation */
+  }
+}
+
+function promptedThisSession() {
+  try {
+    return sessionStorage.getItem(PROMPTED_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function isIOS() {
@@ -73,11 +92,14 @@ export function PwaInstallPrompt() {
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallEvent(event as BeforeInstallPromptEvent);
-      if (!alreadyInstalled()) setShowInstall(true);
+      if (alreadyInstalled() || promptedThisSession()) return;
+      markPromptedThisSession();
+      setShowInstall(true);
     };
 
     const onInstalled = () => {
       localStorage.setItem(INSTALLED_KEY, "1");
+      markPromptedThisSession();
       setShowInstall(false);
       setShowIos(false);
     };
@@ -85,7 +107,10 @@ export function PwaInstallPrompt() {
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     window.addEventListener("appinstalled", onInstalled);
 
-    if (isIOS() && !alreadyInstalled()) setShowIos(true);
+    if (isIOS() && !alreadyInstalled() && !promptedThisSession()) {
+      markPromptedThisSession();
+      setShowIos(true);
+    }
 
     return () => {
       window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
@@ -97,15 +122,18 @@ export function PwaInstallPrompt() {
   }, []);
 
   const dismissInstall = () => {
+    markPromptedThisSession();
     setShowInstall(false);
   };
 
   const dismissIos = () => {
+    markPromptedThisSession();
     setShowIos(false);
   };
 
   const install = async () => {
     if (!installEvent) return;
+    markPromptedThisSession();
     await installEvent.prompt();
     const { outcome } = await installEvent.userChoice;
     if (outcome === "accepted") localStorage.setItem(INSTALLED_KEY, "1");

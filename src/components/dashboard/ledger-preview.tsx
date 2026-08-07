@@ -273,8 +273,8 @@ export function LedgerPreview() {
                       return (
                         <td key={m.id} className="border-t pt-2 text-center">
                           <WeekStatus
-                            status={payment?.status}
-                            amount={saved > 0 ? saved : payment?.amount}
+                            paymentStatus={payment?.status}
+                            saved={saved}
                             target={target}
                             isMe={m.id === member.id}
                           />
@@ -324,30 +324,19 @@ export function LedgerPreview() {
 }
 
 function WeekStatus({
-  status,
-  amount,
+  paymentStatus,
+  saved,
   target,
   isMe,
 }: {
-  status?: "pending" | "approved" | "rejected" | "overdue";
-  amount?: number;
+  paymentStatus?: "pending" | "approved" | "rejected" | "overdue";
+  saved: number;
   target: number;
   isMe: boolean;
 }) {
-  if (status === "approved") {
-    return (
-      <span
-        className={cn(
-          "inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success",
-          isMe && "ring-1 ring-primary/40"
-        )}
-      >
-        <Check className="size-2.5" strokeWidth={3} /> Paid
-        {amount ? <span className="tabular-nums text-success/80">· {formatMoney(amount)}</span> : null}
-      </span>
-    );
-  }
-  if (status === "pending" || status === "rejected") {
+  // A week's status comes from its covered days. A receipt awaiting review
+  // still shows as such so the member knows it isn't confirmed yet.
+  if (paymentStatus === "pending" || paymentStatus === "rejected") {
     return (
       <span
         className={cn(
@@ -356,6 +345,32 @@ function WeekStatus({
         )}
       >
         <Clock3 className="size-2.5" /> Review
+      </span>
+    );
+  }
+  if (saved >= target && target > 0) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success",
+          isMe && "ring-1 ring-primary/40"
+        )}
+      >
+        <Check className="size-2.5" strokeWidth={3} /> Paid
+        <span className="tabular-nums text-success/80">· {formatMoney(saved)}</span>
+      </span>
+    );
+  }
+  if (saved > 0) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning",
+          isMe && "ring-1 ring-primary/40"
+        )}
+      >
+        <CircleDashed className="size-2.5" /> Partial
+        <span className="tabular-nums text-warning/80">· {formatMoney(saved)}/{formatMoney(target)}</span>
       </span>
     );
   }

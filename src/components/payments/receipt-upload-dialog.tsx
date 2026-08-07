@@ -17,6 +17,7 @@ import { cn, namesMatch } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
+import { getMemberPlan } from "@/domain/calculations";
 import { useConfetti } from "@/components/confetti";
 import { uploadReceipt } from "@/lib/upload";
 import { CopyButton } from "@/components/copy-button";
@@ -36,7 +37,7 @@ export function ReceiptUploadDialog({
   amount: number;
   account: { bank: string; accountName: string; accountNumber: string };
 }) {
-  const { uploadReceipt: saveReceipt } = useThrift();
+  const { uploadReceipt: saveReceipt, state } = useThrift();
   const { member } = useAuth();
   const fireConfetti = useConfetti();
 
@@ -70,13 +71,25 @@ export function ReceiptUploadDialog({
     return Number.isFinite(num) && num > 0 ? num : 0;
   }, [receiptAmount]);
 
+  // The amount decides how many days are covered (₦2100 at ₦300/day = 7 days).
+  // The selected day count only pre-fills the expected amount.
+  const dailyRate = React.useMemo(() => {
+    if (!state || !member) return 0;
+    return getMemberPlan(state, member.id)?.dailyAmount ?? 0;
+  }, [state, member]);
+
+  const effectiveDays = React.useMemo(() => {
+    if (enteredAmount > 0 && dailyRate > 0) return Math.max(1, Math.round(enteredAmount / dailyRate));
+    return daysPaid;
+  }, [enteredAmount, dailyRate, daysPaid]);
+
   const daysLabel = React.useMemo(() => {
-    if (daysPaid <= 5) return "This week only (Mon–Fri)";
-    const weeks = Math.floor(daysPaid / 5);
-    const extra = daysPaid % 5;
-    if (extra === 0) return `${weeks} full weeks (${daysPaid} working days)`;
+    if (effectiveDays <= 5) return "This week only (Mon–Fri)";
+    const weeks = Math.floor(effectiveDays / 5);
+    const extra = effectiveDays % 5;
+    if (extra === 0) return `${weeks} full weeks (${effectiveDays} working days)`;
     return `${weeks} week${weeks > 1 ? "s" : ""} + ${extra} day${extra > 1 ? "s" : ""} of the next week`;
-  }, [daysPaid]);
+  }, [effectiveDays]);
 
   const nameOk = React.useMemo(
     () => Boolean(member) && namesMatch(senderName, member?.name ?? ""),
@@ -226,15 +239,18 @@ export function ReceiptUploadDialog({
                 <CalendarDays className="size-4 text-primary" /> How many days does this cover?
               </p>
               <p className="text-xs text-muted-foreground">
-                Paying for extra days covers the next week(s). Weekends are never counted — only
-                working days.
+                The amount decides how many days this covers (e.g. ₦2,100 at ₦300/day = 7 days) —
+                extra days roll into the next week(s). Weekends are never counted.
               </p>
               <div className="grid grid-cols-4 gap-1.5">
                 {[5, 7, 10, 15].map((d) => (
                   <button
                     key={d}
                     type="button"
-                    onClick={() => setDaysPaid(d)}
+                    onClick={() => {
+                      setDaysPaid(d);
+                      if (dailyRate > 0) setReceiptAmount(String(d * dailyRate));
+                    }}
                     className={cn(
                       "rounded-xl border-2 py-2 text-sm font-bold transition-all",
                       daysPaid === d

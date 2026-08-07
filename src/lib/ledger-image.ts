@@ -4,6 +4,7 @@ import type { ThriftState } from "@/domain/types";
 
 const STATUS_COLORS: Record<LedgerStatus, string> = {
   paid: "#059669",
+  partial: "#d97706",
   review: "#d97706",
   pending: "#64748b",
   missed: "#dc2626",
@@ -12,6 +13,7 @@ const STATUS_COLORS: Record<LedgerStatus, string> = {
 
 const STATUS_BG: Record<LedgerStatus, string> = {
   paid: "#d1fae5",
+  partial: "#fef3c7",
   review: "#fef3c7",
   pending: "#f1f5f9",
   missed: "#fee2e2",
@@ -131,6 +133,7 @@ export async function renderLedgerImage(state: ThriftState): Promise<string> {
   const footerY = headerH + rows.length * rowH + pad;
   const legendItems = [
     { status: "paid" as LedgerStatus },
+    { status: "partial" as LedgerStatus },
     { status: "review" as LedgerStatus },
     { status: "pending" as LedgerStatus },
     { status: "missed" as LedgerStatus },
