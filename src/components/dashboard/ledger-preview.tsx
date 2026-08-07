@@ -3,7 +3,16 @@
 import * as React from "react";
 import Link from "next/link";
 import { addDays } from "date-fns";
-import { ArrowUpRight, BookOpen, CalendarDays, Check, CircleDashed, Clock3 } from "lucide-react";
+import {
+  ArrowUpRight,
+  BookOpen,
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleDashed,
+  Clock3,
+} from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,15 +22,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getCurrentWeek, iso, parseDay } from "@/domain/calendar";
-import { getSavingsOn, getWeekPayment } from "@/domain/calculations";
-import type { Member, ThriftSettings } from "@/domain/types";
-
-// A member who is signed up for 7 days contributes Mon–Sun; everyone else
-// follows the group's contribution days.
-function memberWorkDays(member: Member, settings: ThriftSettings): number[] {
-  if (member.daysPerWeek === 7) return [1, 2, 3, 4, 5, 6, 7];
-  return settings.workingDays;
-}
+import { getSavingsOn, getWeekPayment, getWeekSavings, getWeeklyTarget } from "@/domain/calculations";
 
 export function LedgerPreview() {
   const { state } = useThrift();
@@ -37,12 +38,26 @@ export function LedgerPreview() {
     [state]
   );
 
+  const currentWeekIndex = React.useMemo(() => {
+    if (!state) return 0;
+    const current = getCurrentWeek(state.weeks);
+    return current ? state.weeks.findIndex((w) => w.id === current.id) : 0;
+  }, [state]);
+
+  const [weekIndex, setWeekIndex] = React.useState(currentWeekIndex);
+
+  // Follow the current week when it moves (e.g. after a reload).
+  React.useEffect(() => {
+    setWeekIndex(currentWeekIndex);
+  }, [currentWeekIndex]);
+
   if (!state || !member) return null;
 
   const members = state.members.filter((m) => m.status === "active");
-  const currentWeek = getCurrentWeek(state.weeks);
+  const workingDays = state.settings.workingDays;
+  const week = state.weeks[weekIndex];
   const todayIso = iso(new Date());
-  const weekStart = currentWeek ? parseDay(currentWeek.startDate) : null;
+  const weekStart = week ? parseDay(week.startDate) : null;
   const weekDays = weekStart
     ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
     : [];
@@ -61,28 +76,62 @@ export function LedgerPreview() {
       </CardHeader>
 
       <CardContent className="px-4 pb-4 sm:px-5">
-        {!currentWeek ? (
+        {!week || weekDays.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed py-8 text-center">
             <CalendarDays className="size-6 text-muted-foreground/50" />
-            <p className="text-sm font-medium">No active week right now</p>
+            <p className="text-sm font-medium">No week to show here</p>
             <p className="text-xs text-muted-foreground">
-              The current week&apos;s days will appear here once it starts.
+              Weeks will appear here once contributions start.
             </p>
           </div>
         ) : (
           <>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-7 rounded-full"
+                    disabled={weekIndex <= 0}
+                    onClick={() => setWeekIndex((i) => Math.max(0, i - 1))}
+                    aria-label="Previous week"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-7 rounded-full"
+                    disabled={weekIndex >= state.weeks.length - 1}
+                    onClick={() => setWeekIndex((i) => Math.min(state.weeks.length - 1, i + 1))}
+                    aria-label="Next week"
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground">
-                  Week {currentWeek.number}
+                  Week {week.number}
                 </span>
                 <span className="text-xs font-semibold text-muted-foreground">
-                  {formatDate(currentWeek.startDate)} – {formatDate(currentWeek.endDate)}
+                  {formatDate(week.startDate)} – {formatDate(week.endDate)}
                 </span>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-1 text-[10px] font-bold text-warning">
-                <Clock3 className="size-3" /> NOW
-              </span>
+              <div className="flex items-center gap-1.5">
+                {currentWeekIndex !== weekIndex ? (
+                  <button
+                    type="button"
+                    onClick={() => setWeekIndex(currentWeekIndex)}
+                    className="rounded-full border px-2 py-1 text-[10px] font-bold text-primary transition-colors hover:bg-primary/5"
+                  >
+                    This week
+                  </button>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-1 text-[10px] font-bold text-warning">
+                    <Clock3 className="size-3" /> NOW
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -123,8 +172,15 @@ export function LedgerPreview() {
                     const dow = day.getDay() === 0 ? 7 : day.getDay();
                     const isToday = dateStr === todayIso;
                     const isPast = dateStr < todayIso;
+                    const isWorking = workingDays.includes(dow);
                     return (
-                      <tr key={dateStr} className={cn(isToday && "bg-primary/[0.05]")}>
+                      <tr
+                        key={dateStr}
+                        className={cn(
+                          isToday && "bg-primary/[0.05]",
+                          !isWorking && "opacity-60"
+                        )}
+                      >
                         <td
                           className={cn(
                             "whitespace-nowrap py-1.5 pr-2 text-xs font-semibold",
@@ -139,8 +195,7 @@ export function LedgerPreview() {
                           ) : null}
                         </td>
                         {members.map((m) => {
-                          const workDays = memberWorkDays(m, state.settings);
-                          if (!workDays.includes(dow)) {
+                          if (!isWorking) {
                             return (
                               <td key={m.id} className="px-1 py-1 text-center">
                                 <span className="text-[11px] font-medium text-muted-foreground/25">
@@ -212,12 +267,15 @@ export function LedgerPreview() {
                       Week
                     </td>
                     {members.map((m) => {
-                      const payment = getWeekPayment(state.payments, m.id, currentWeek.id);
+                      const saved = getWeekSavings(state.savings, m.id, week.id);
+                      const target = getWeeklyTarget(state, m.id, week);
+                      const payment = getWeekPayment(state.payments, m.id, week.id);
                       return (
                         <td key={m.id} className="border-t pt-2 text-center">
                           <WeekStatus
                             status={payment?.status}
-                            amount={payment?.amount}
+                            amount={saved > 0 ? saved : payment?.amount}
+                            target={target}
                             isMe={m.id === member.id}
                           />
                         </td>
@@ -230,7 +288,7 @@ export function LedgerPreview() {
 
             <p className="mt-3 flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
               <CircleDashed className="size-3.5 shrink-0" />
-              Each past day counts as done. A week is only marked{" "}
+              Each past working day counts as done. A week is only marked{" "}
               <span className="font-semibold text-success">Paid</span> once the receipt is uploaded
               and confirmed.
             </p>
@@ -268,10 +326,12 @@ export function LedgerPreview() {
 function WeekStatus({
   status,
   amount,
+  target,
   isMe,
 }: {
   status?: "pending" | "approved" | "rejected" | "overdue";
   amount?: number;
+  target: number;
   isMe: boolean;
 }) {
   if (status === "approved") {
@@ -306,7 +366,7 @@ function WeekStatus({
         isMe && "ring-1 ring-primary/40"
       )}
     >
-      <CircleDashed className="size-2.5" /> Pending
+      <CircleDashed className="size-2.5" /> {target > 0 ? `${formatMoney(target)} due` : "Pending"}
     </span>
   );
 }

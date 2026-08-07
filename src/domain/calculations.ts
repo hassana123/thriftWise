@@ -43,7 +43,10 @@ export function getPlanForWeek(
 export function getWeeklyTarget(state: ThriftState, memberId: string, week: ThriftWeek) {
   const plan = getPlanForWeek(state, memberId, week);
   const member = state.members.find((m) => m.id === memberId);
-  const days = member?.daysPerWeek ?? week.days.length;
+  // A week physically only has the group's working days. If a member commits to
+  // more days than that (e.g. 7), the overflow pre-pays the NEXT week's working
+  // days — it never covers weekends. Cap the per-week target at the week's days.
+  const days = Math.min(member?.daysPerWeek ?? week.days.length, week.days.length);
   return plan.dailyAmount * days;
 }
 
@@ -219,22 +222,119 @@ export function getExpectedSavingsToDate(state: ThriftState, memberId: string): 
     .reduce((sum, w) => sum + getWeeklyTarget(state, memberId, w), 0);
 }
 
-// Recalculates a member's recorded payment amounts and day-by-day savings for
-// every week that already has a payment record, so tables, balances, and the
-// ledger stay in sync after plan or days-per-week changes. Honors plan-change
-// history (getWeeklyTarget → getPlanForWeek), so "today"/"next-week" changes
-// leave earlier weeks at their previous plan while "beginning" backdates them.
-export function resyncMemberWeeks(state: ThriftState, memberId: string): ThriftState {
-  let payments = state.payments;
+export interface PaymentSpreadWeek {
+  week: ThriftWeek;
+  covered: number;
+  amount: number;
+}
+
+// Spreads a payment across consecutive WORKING days, rolling into following
+// weeks. 7 days means Mon–Fri of this week plus Mon–Tue of the next week —
+// weekends are never counted. Only days that don't already have savings are
+// filled, so pre-paid days (from an earlier payment's overflow) roll forward
+// instead of being double-counted.
+export function spreadPayment(
+  state: ThriftState,
+  memberId: string,
+  startWeekId: string,
+  amount: number,
+  daysCovered?: number
+): { weeks: PaymentSpreadWeek[]; savings: DaySaving[] } {
+  if (amount <= 0) return { weeks: [], savings: state.savings };
+  const startIndex = state.weeks.findIndex((w) => w.id === startWeekId);
+  if (startIndex < 0) return { weeks: [], savings: state.savings };
+  const startWeek = state.weeks[startIndex];
+  const plan = getPlanForWeek(state, memberId, startWeek);
+  const defaultDays = startWeek.days.length || 5;
+  const totalDays =
+    daysCovered && daysCovered > 0
+      ? Math.floor(daysCovered)
+      : Math.max(1, Math.round(amount / (plan.dailyAmount || 1)));
+  const perDay = amount / totalDays;
   let savings = state.savings;
-  for (const w of state.weeks) {
-    const existing = payments.find((p) => p.memberId === memberId && p.weekId === w.id);
-    if (!existing) continue;
-    const target = getWeeklyTarget(state, memberId, w);
-    payments = payments.map((p) => (p.id === existing.id ? { ...p, amount: target } : p));
-    const dates = new Set(w.days.map((d) => d.date));
-    savings = savings.filter((s) => !(s.memberId === memberId && dates.has(s.date)));
-    savings = fillWeekSavings({ ...state, payments, savings }, memberId, w.id, target);
+  let remainingDays = totalDays;
+  let remainingAmount = amount;
+  const weeks: PaymentSpreadWeek[] = [];
+  let i = startIndex;
+  while (remainingDays > 0 && i < state.weeks.length) {
+    const week = state.weeks[i];
+    const dates = new Set(week.days.map((d) => d.date));
+    const alreadySaved = new Set(
+      savings
+        .filter((s) => s.memberId === memberId && dates.has(s.date))
+        .map((s) => s.date)
+    );
+    const missing = week.days.filter((d) => !alreadySaved.has(d.date));
+    const covered = Math.min(remainingDays, missing.length);
+    if (covered <= 0) {
+      i += 1;
+      continue;
+    }
+    const weekAmount =
+      i === state.weeks.length - 1 ? remainingAmount : Math.round(perDay * covered);
+    weeks.push({ week, covered, amount: weekAmount });
+    savings = fillWeekSavings({ ...state, savings }, memberId, week.id, weekAmount, covered);
+    remainingDays -= covered;
+    remainingAmount -= weekAmount;
+    i += 1;
   }
+  return { weeks, savings };
+}
+
+// The day-by-day amount actually saved for a member across a week.
+export function getWeekSavedTotal(savings: DaySaving[], memberId: string, weekId: string): number {
+  return getWeekSavings(savings, memberId, weekId);
+}
+
+// Rebuilds a member's day-by-day savings (and their per-week payment records)
+// from their approved payments using rolling day coverage, so the ledger always
+// matches what the member actually paid. Payment totals are preserved — money
+// is never lost or re-valued by a plan/days change.
+export function resyncMemberWeeks(state: ThriftState, memberId: string): ThriftState {
+  let savings = state.savings.filter((s) => s.memberId !== memberId);
+  let payments = state.payments.filter((p) => p.memberId !== memberId);
+
+  const approved = state.payments
+    .filter((p) => p.memberId === memberId && p.status === "approved" && (p.amount ?? 0) > 0)
+    .map((p) => ({ p, idx: state.weeks.findIndex((w) => w.id === p.weekId) }))
+    .filter((x) => x.idx >= 0)
+    .sort(
+      (a, b) =>
+        a.idx - b.idx || String(a.p.createdAt ?? "").localeCompare(String(b.p.createdAt ?? ""))
+    );
+
+  for (const { p } of approved) {
+    const { weeks, savings: nextSavings } = spreadPayment(
+      { ...state, savings, payments },
+      memberId,
+      p.weekId,
+      p.amount ?? 0
+    );
+    savings = nextSavings;
+    // A week's payment amount mirrors the total days covered inside it (its
+    // day-sum), so records stay consistent with the day-by-day ledger across
+    // week boundaries — overflow from an earlier payment is never lost.
+    for (const { week } of weeks) {
+      const amount = getWeekSavings(savings, memberId, week.id);
+      const existing = payments.find((q) => q.memberId === memberId && q.weekId === week.id);
+      const payment = existing
+        ? { ...existing, amount }
+        : {
+            id: `${memberId}-${week.id}`,
+            memberId,
+            weekId: week.id,
+            amount,
+            status: "approved" as const,
+            method: "manual" as const,
+            receiptStatus: "approved" as const,
+            createdAt: p.createdAt,
+            approvedAt: p.approvedAt,
+          };
+      payments = existing
+        ? payments.map((q) => (q.id === payment.id ? payment : q))
+        : [...payments, payment];
+    }
+  }
+
   return { ...state, payments, savings };
 }

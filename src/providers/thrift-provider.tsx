@@ -16,7 +16,7 @@ import { buildPlan, planKeyFromAmount, AVATAR_COLORS } from "@/domain/constants"
 import { getRepository, seedDemoState } from "@/lib/repository";
 import { getSupabaseMode } from "@/lib/supabase/config";
 import { deleteReceipt } from "@/lib/upload";
-import { getTotalTransferred, getWeeklyTarget, fillWeekSavings, getPlanForWeek, getMemberPlan, resyncMemberWeeks } from "@/domain/calculations";
+import { getTotalTransferred, getWeeklyTarget, spreadPayment, getPlanForWeek, getMemberPlan, resyncMemberWeeks, getWeekSavings } from "@/domain/calculations";
 import { ensureReminders } from "@/domain/reminders";
 import { applyAutoSave } from "@/domain/auto-save";
 
@@ -237,29 +237,24 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         const defaultDays = startWeek.days.length || 5;
         const totalDays = daysCovered && daysCovered > 0 ? Math.floor(daysCovered) : defaultDays;
         const receiptAmount = amount && amount > 0 ? amount : plan.dailyAmount * totalDays;
-        const perDay = receiptAmount / totalDays;
         const isAutoApproved = Boolean(autoApproved) && receiptAmount > 0;
         const status = isAutoApproved ? ("approved" as const) : ("pending" as const);
         const now = iso(new Date());
 
-        const startIndex = prev.weeks.findIndex((w) => w.id === weekId);
-        let remainingDays = totalDays;
-        let remainingAmount = receiptAmount;
-        let payments = prev.payments;
-        let savings = prev.savings;
-        const coveredWeekNumbers: number[] = [];
-        let i = startIndex;
-        while (remainingDays > 0 && i < prev.weeks.length) {
-          const week = prev.weeks[i];
-          const daysInWeek = week.days.length;
-          const covered = Math.min(remainingDays, daysInWeek);
-          const weekAmount = i === prev.weeks.length - 1
-            ? remainingAmount
-            : Math.round(perDay * covered);
-          remainingDays -= covered;
-          remainingAmount -= weekAmount;
-          coveredWeekNumbers.push(week.number);
+        const { weeks, savings } = spreadPayment(
+          { ...prev, savings: prev.savings, payments: prev.payments },
+          memberId,
+          weekId,
+          receiptAmount,
+          totalDays
+        );
+        const coveredWeekNumbers = weeks.map((w) => w.week.number);
 
+        // Each covered week's payment record mirrors the days covered inside it
+        // (its day-sum), so records stay consistent with the day-by-day ledger.
+        let payments = prev.payments;
+        for (const { week } of weeks) {
+          const weekAmount = getWeekSavings(savings, memberId, week.id);
           const existing = payments.find(
             (p) => p.memberId === memberId && p.weekId === week.id
           );
@@ -287,14 +282,6 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
           payments = existing
             ? payments.map((p) => (p.id === payment.id ? payment : p))
             : [...payments, payment];
-          savings = fillWeekSavings(
-            { ...prev, payments, savings },
-            memberId,
-            week.id,
-            weekAmount,
-            covered
-          );
-          i += 1;
         }
 
         const member = prev.members.find((m) => m.id === memberId);

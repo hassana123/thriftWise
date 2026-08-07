@@ -18,7 +18,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-const PROMPTED_KEY = "tw-pwa-prompted";
+const INSTALLED_KEY = "tw-pwa-installed";
 
 function isStandalone() {
   return (
@@ -68,23 +68,24 @@ export function PwaInstallPrompt() {
 
     if (isStandalone()) return;
 
-    const alreadyPrompted = () => localStorage.getItem(PROMPTED_KEY) === "1";
+    const alreadyInstalled = () => localStorage.getItem(INSTALLED_KEY) === "1";
 
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallEvent(event as BeforeInstallPromptEvent);
-      if (!alreadyPrompted()) setShowInstall(true);
+      if (!alreadyInstalled()) setShowInstall(true);
     };
 
     const onInstalled = () => {
-      localStorage.setItem(PROMPTED_KEY, "1");
+      localStorage.setItem(INSTALLED_KEY, "1");
       setShowInstall(false);
+      setShowIos(false);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     window.addEventListener("appinstalled", onInstalled);
 
-    if (isIOS() && !alreadyPrompted()) setShowIos(true);
+    if (isIOS() && !alreadyInstalled()) setShowIos(true);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
@@ -96,21 +97,18 @@ export function PwaInstallPrompt() {
   }, []);
 
   const dismissInstall = () => {
-    localStorage.setItem(PROMPTED_KEY, "1");
     setShowInstall(false);
   };
 
   const dismissIos = () => {
-    localStorage.setItem(PROMPTED_KEY, "1");
     setShowIos(false);
   };
 
   const install = async () => {
     if (!installEvent) return;
-    localStorage.setItem(PROMPTED_KEY, "1");
     await installEvent.prompt();
     const { outcome } = await installEvent.userChoice;
-    if (outcome === "accepted") localStorage.setItem(PROMPTED_KEY, "1");
+    if (outcome === "accepted") localStorage.setItem(INSTALLED_KEY, "1");
     setInstallEvent(null);
     setShowInstall(false);
   };
