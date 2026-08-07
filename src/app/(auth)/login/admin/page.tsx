@@ -18,20 +18,22 @@ import { useThrift } from "@/providers/thrift-provider";
 export default function AdminLoginPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { signInWithEmail, signInWithGoogle, signInDemo, resetPassword, user, mode } = useAuth();
-  const { state } = useThrift();
+  const { signInWithEmail, signInWithGoogle, signInDemo, resetPassword, user, mode, loading: authLoading } = useAuth();
+  const { state, isReady, isReloading } = useThrift();
 
   const [email, setEmail] = React.useState("hassanaabdll1@gmail.com");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
+  const settled = isReady && !isReloading && !authLoading;
+
   React.useEffect(() => {
-    if (user) {
+    if (user && settled) {
       const target = state ? "/dashboard" : "/onboarding";
       if (pathname !== target) router.replace(target);
     }
-  }, [user, state, router, pathname]);
+  }, [user, state, settled, router, pathname]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

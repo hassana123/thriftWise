@@ -1,11 +1,18 @@
-const CACHE = "thriftwise-v1";
-const APP_SHELL = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png"];
+const CACHE = "thriftwise-static-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) =>
+        cache.addAll([
+          "/manifest.json",
+          "/icon-192.png",
+          "/icon-512.png",
+          "/icon-512-maskable.png",
+          "/apple-icon.png",
+        ])
+      )
       .then(() => self.skipWaiting())
   );
 });
@@ -26,28 +33,34 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
 
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put("/", copy));
-          return response;
-        })
-        .catch(() => caches.match("/"))
-    );
-    return;
-  }
+  // Never cache page navigations or Next.js RSC/prefetch payloads. Caching them
+  // serves stale HTML after login/logout, which shows up as flickering/glitching
+  // on phones until a hard refresh clears the cache.
+  if (request.mode === "navigate") return;
+  if (url.searchParams.has("_rsc")) return;
+  if (request.headers.get("next-router-prefetch") === "1") return;
+
+  // Only cache immutable static assets. Hashed files in /_next/static can never
+  // go stale; icons and the manifest are also safe to serve from cache.
+  const isStatic =
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname === "/manifest.json" ||
+    /^\/(icon-[^/]+|apple-icon)\.png$/.test(url.pathname);
+
+  if (!isStatic) return;
 
   event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ||
-        fetch(request).then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, copy));
+    caches.match(request).then((cached) => {
+      const network = fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, copy));
+          }
           return response;
         })
-    )
+        .catch(() => cached);
+      return cached || network;
+    })
   );
 });

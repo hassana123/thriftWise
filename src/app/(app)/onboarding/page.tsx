@@ -70,11 +70,21 @@ const STEPS: { key: keyof FormValues; title: string; subtitle: string; icon: Rea
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { createThrift } = useThrift();
+  const { createThrift, state } = useThrift();
   const { member, user } = useAuth();
 
   const [step, setStep] = React.useState(0);
   const [completed, setCompleted] = React.useState(false);
+  const justCreated = React.useRef(false);
+
+  // A signed-in user with existing data shouldn't be onboarding — this happens
+  // when a returning user lands here via a stale refresh or after a slow load.
+  // Skip the redirect when we just created the thrift so the celebration shows.
+  React.useEffect(() => {
+    if (state && user && !justCreated.current) {
+      router.replace("/dashboard");
+    }
+  }, [state, user, router]);
 
   const form = useForm<FormInput, undefined, FormValues>({
     resolver: zodResolver(formSchema),
@@ -128,6 +138,7 @@ export default function OnboardingPage() {
       return;
     }
     if (await validateStep(step)) {
+      justCreated.current = true;
       const values = form.getValues();
       createThrift({
         name: values.name,

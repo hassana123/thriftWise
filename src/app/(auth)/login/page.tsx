@@ -16,19 +16,21 @@ import { initials } from "@/lib/format";
 export default function FamilyLoginPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { signInWithName, user, mode } = useAuth();
-  const { state } = useThrift();
+  const { signInWithName, user, mode, loading } = useAuth();
+  const { state, isReady, isReloading } = useThrift();
 
   const [error, setError] = React.useState<string | null>(null);
 
   const family = state?.members.filter((m) => m.status !== "suspended") ?? [];
 
+  const settled = isReady && !isReloading && !loading;
+
   React.useEffect(() => {
-    if (user) {
+    if (user && settled) {
       const target = state ? "/dashboard" : "/onboarding";
       if (pathname !== target) router.replace(target);
     }
-  }, [user, state, router, pathname]);
+  }, [user, state, settled, router, pathname]);
 
   function enter(displayName: string) {
     setError(null);

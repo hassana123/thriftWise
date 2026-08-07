@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { PiggyBank, ShieldCheck } from "lucide-react";
 
 import { Logo } from "@/components/logo";
@@ -12,20 +12,28 @@ import { useThrift } from "@/providers/thrift-provider";
 
 export default function LandingPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { state } = useThrift();
+  const pathname = usePathname();
+  const { user, loading } = useAuth();
+  const { state, isReady, isReloading } = useThrift();
+
+  // Only redirect once auth + thrift have settled. Redirecting early (while the
+  // thrift is still loading or being refreshed) can send a signed-in user to
+  // /onboarding instead of /dashboard based purely on timing.
+  const settled = isReady && !isReloading && !loading;
 
   React.useEffect(() => {
+    if (!settled) return;
     if (user) {
-      router.replace(state ? "/dashboard" : "/onboarding");
+      const target = state ? "/dashboard" : "/onboarding";
+      if (pathname !== target) router.replace(target);
       return;
     }
     if (state) {
-      router.replace("/login");
+      if (pathname !== "/login") router.replace("/login");
     }
-  }, [user, state, router]);
+  }, [user, state, settled, router, pathname]);
 
-  if (user || state) return null;
+  if (!settled || user || state) return null;
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-emerald-50 via-background to-background px-4 dark:from-emerald-950/40">
