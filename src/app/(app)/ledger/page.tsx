@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, Clock3, ShieldCheck } from "lucide-react";
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, ShieldCheck } from "lucide-react";
 import { addDays } from "date-fns";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { getCurrentWeek, iso, parseDay } from "@/domain/calendar";
+import { getCurrentWeek, getWeekStatus, iso, parseDay } from "@/domain/calendar";
 import {
   getFamilySavings,
   getMemberPlan,
@@ -296,6 +296,7 @@ function DayGrid({
   const todayIso = iso(new Date());
   const weekStart = parseDay(week.startDate);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const status = getWeekStatus(week);
 
   return (
     <Card className="overflow-hidden">
@@ -348,6 +349,7 @@ function DayGrid({
                 const dateStr = iso(day);
                 const dow = day.getDay() === 0 ? 7 : day.getDay();
                 const isToday = dateStr === todayIso;
+                const isPast = dateStr < todayIso;
                 const isWorking = workingDays.includes(dow);
                 return (
                   <tr key={dateStr} className={cn(isToday && "bg-primary/[0.05]", !isWorking && "opacity-60")}>
@@ -387,6 +389,35 @@ function DayGrid({
                           </td>
                         );
                       }
+                      if (isPast) {
+                        return (
+                          <td key={m.id} className="border-b px-1 py-1 text-center">
+                            <span
+                              className={cn(
+                                "inline-flex size-5 items-center justify-center rounded-full bg-success/10 text-success",
+                                m.id === memberId && "ring-1 ring-primary/40"
+                              )}
+                              title="Day has passed — counted as done"
+                            >
+                              <Check className="size-3" strokeWidth={3} />
+                            </span>
+                          </td>
+                        );
+                      }
+                      if (isToday) {
+                        return (
+                          <td key={m.id} className="border-b px-1 py-1 text-center">
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full border border-dashed border-primary/40 px-1.5 py-0.5 text-[10px] font-bold text-primary",
+                                m.id === memberId && "ring-1 ring-primary/40"
+                              )}
+                            >
+                              Today
+                            </span>
+                          </td>
+                        );
+                      }
                       return (
                         <td key={m.id} className="border-b px-1 py-1 text-center">
                           <span className="text-[11px] font-medium text-muted-foreground/40">—</span>
@@ -405,20 +436,26 @@ function DayGrid({
                   const target = getWeeklyTarget(state, m.id, week);
                   return (
                     <td key={m.id} className="px-1 pt-2 text-center">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
-                          saved >= target && saved > 0
-                            ? "bg-success/10 text-success"
-                            : saved > 0
-                              ? "bg-secondary/60 text-muted-foreground"
-                              : "bg-secondary/60 text-muted-foreground/60",
-                          m.id === memberId && "ring-1 ring-primary/40"
-                        )}
-                      >
-                        {saved > 0 ? formatMoney(saved) : "—"}
-                        <span className="font-medium text-muted-foreground/70">/ {formatMoney(target)}</span>
-                      </span>
+                      {status === "upcoming" && saved === 0 ? (
+                        <span className="text-[10px] font-bold text-muted-foreground/60">
+                          Not due yet
+                        </span>
+                      ) : (
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                            saved >= target && saved > 0
+                              ? "bg-success/10 text-success"
+                              : saved > 0
+                                ? "bg-secondary/60 text-muted-foreground"
+                                : "bg-secondary/60 text-muted-foreground/60",
+                            m.id === memberId && "ring-1 ring-primary/40"
+                          )}
+                        >
+                          {saved > 0 ? formatMoney(saved) : "—"}
+                          <span className="font-medium text-muted-foreground/70">/ {formatMoney(target)}</span>
+                        </span>
+                      )}
                     </td>
                   );
                 })}

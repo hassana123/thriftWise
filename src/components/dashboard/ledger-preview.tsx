@@ -21,7 +21,7 @@ import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { getCurrentWeek, iso, parseDay } from "@/domain/calendar";
+import { getCurrentWeek, getWeekStatus, iso, parseDay } from "@/domain/calendar";
 import { getSavingsOn, getWeekPayment, getWeekSavings, getWeeklyTarget } from "@/domain/calculations";
 
 export function LedgerPreview() {
@@ -276,6 +276,7 @@ export function LedgerPreview() {
                             paymentStatus={payment?.status}
                             saved={saved}
                             target={target}
+                            notDue={getWeekStatus(week) === "upcoming"}
                             isMe={m.id === member.id}
                           />
                         </td>
@@ -327,11 +328,13 @@ function WeekStatus({
   paymentStatus,
   saved,
   target,
+  notDue,
   isMe,
 }: {
   paymentStatus?: "pending" | "approved" | "rejected" | "overdue";
   saved: number;
   target: number;
+  notDue?: boolean;
   isMe: boolean;
 }) {
   // A week's status comes from its covered days. A receipt awaiting review
@@ -371,6 +374,18 @@ function WeekStatus({
       >
         <CircleDashed className="size-2.5" /> Partial
         <span className="tabular-nums text-warning/80">· {formatMoney(saved)}/{formatMoney(target)}</span>
+      </span>
+    );
+  }
+  if (notDue && target > 0 && saved === 0) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full bg-secondary/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground/70",
+          isMe && "ring-1 ring-primary/40"
+        )}
+      >
+        <CircleDashed className="size-2.5" /> Not due yet
       </span>
     );
   }

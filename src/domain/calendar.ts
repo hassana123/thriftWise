@@ -76,17 +76,21 @@ export function generateWeeks(settings: ThriftSettings): ThriftWeek[] {
 export function getCurrentWeek(weeks: ThriftWeek[], today = new Date()): ThriftWeek | null {
   const day = toStartOfDay(today);
   const current = weeks.find((w) => {
-    const s = parseDay(w.startDate);
-    const e = parseDay(w.endDate);
-    return (isSameDay(day, s) || isAfter(day, s)) && (isSameDay(day, e) || isBefore(day, e));
+    // A week spans its whole Mon–Sun calendar week, so a Saturday/Sunday still
+    // belongs to the week that started that Monday (never a gap with no week).
+    const monday = startOfWeek(parseDay(w.startDate), { weekStartsOn: 1 });
+    const sunday = endOfWeek(monday, { weekStartsOn: 1 });
+    return (isSameDay(day, monday) || isAfter(day, monday)) && (isSameDay(day, sunday) || isBefore(day, sunday));
   });
   return current ?? null;
 }
 
 export function getWeekStatus(week: ThriftWeek, today = new Date()): "upcoming" | "current" | "past" {
   const day = toStartOfDay(today);
-  if (isBefore(day, parseDay(week.startDate))) return "upcoming";
-  if (isAfter(day, parseDay(week.endDate))) return "past";
+  const monday = startOfWeek(parseDay(week.startDate), { weekStartsOn: 1 });
+  const sunday = endOfWeek(monday, { weekStartsOn: 1 });
+  if (isBefore(day, monday)) return "upcoming";
+  if (isAfter(day, sunday)) return "past";
   return "current";
 }
 
