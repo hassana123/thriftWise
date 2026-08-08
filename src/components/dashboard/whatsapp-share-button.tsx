@@ -36,6 +36,8 @@ export function WhatsAppShareButton({
     try {
       const dataUrl = await renderLedgerImage(currentState);
       setImage(dataUrl);
+    } catch (error) {
+      console.error("Failed to render ledger image", error);
     } finally {
       setCapturing(false);
     }
@@ -43,6 +45,22 @@ export function WhatsAppShareButton({
 
   async function handleDownload() {
     if (!image) return;
+    try {
+      const blob = await (await fetch(image)).blob();
+      const file = new File([blob], "thrift-ledger.png", { type: "image/png" });
+      // iOS Safari ignores the anchor `download` attribute, so it only saves via
+      // the native share sheet. Ask for "Save Image" there when files are supported.
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "Family thrift ledger" });
+          return;
+        } catch {
+          /* user cancelled the sheet — fall through to the anchor fallback */
+        }
+      }
+    } catch {
+      /* blob fetch failed — fall through to the anchor fallback */
+    }
     const a = document.createElement("a");
     a.href = image;
     a.download = "thrift-ledger.png";
