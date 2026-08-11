@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { format } from "date-fns";
 import {
   LayoutDashboard,
   BookOpen,
@@ -14,6 +15,7 @@ import {
   Moon,
   Sun,
   ChevronRight,
+  Plane,
   Wallet,
 } from "lucide-react";
 
@@ -36,8 +38,8 @@ import { PageTransition } from "@/components/page-transition";
 import { useTheme } from "@/components/theme-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { useThrift } from "@/providers/thrift-provider";
-import { initials, formatMoneyCompact } from "@/lib/format";
-import { getFamilySavings } from "@/domain/calculations";
+import { initials, formatMoney, formatMoneyCompact } from "@/lib/format";
+import { getFamilyGoal, getFamilySavings } from "@/domain/calculations";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -83,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (isOnboarding) {
       return (
         <div className="flex min-h-screen bg-background">
-          <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
+          <main className="mx-auto w-full max-w-5xl flex-1 px-2 py-4 sm:px-2">
             {children}
           </main>
         </div>
@@ -145,10 +147,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/dashboard" className="lg:hidden">
               <Logo showText={false} />
             </Link>
-            <PageTitle pathname={pathname} />
+            <HeaderTitle pathname={pathname} />
           </div>
 
           <div className="flex items-center gap-1.5">
+            <DaysLeftBadge />
+
             <Link
               href="/analytics"
               title={`Total family savings: ${formatMoneyCompact(totalSaved)}`}
@@ -187,7 +191,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-28 pt-6 sm:px-6 lg:pb-10">
+        <main className="mx-auto w-full max-w-6xl flex-1 px-2 pb-28 pt-2 sm:px-4 lg:pb-10">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>
@@ -296,9 +300,53 @@ function NotificationPanel() {
   );
 }
 
-function PageTitle({ pathname }: { pathname: string }) {
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function HeaderTitle({ pathname }: { pathname: string }) {
+  const { state } = useThrift();
+  const { member } = useAuth();
   const title = NAV_ITEMS.find((i) => pathname.startsWith(i.href))?.label ?? "ThriftWise";
+
+  if (pathname === "/dashboard" && state && member) {
+    const familyGoal = getFamilyGoal(state);
+    return (
+      <div className="min-w-0 leading-tight">
+        <h1 className="truncate text-base font-bold sm:text-lg">
+          {greeting()}, {member.name.split(" ")[0]}!
+        </h1>
+        <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
+          {format(new Date(), "EEEE, MMMM d")} · {state.settings.name} · goal{" "}
+          {formatMoney(familyGoal)}
+        </p>
+      </div>
+    );
+  }
   return <h1 className="text-lg font-bold">{title}</h1>;
+}
+
+function DaysLeftBadge() {
+  const { state } = useThrift();
+  if (!state) return null;
+  const daysLeft = Math.max(
+    0,
+    Math.ceil(
+      (new Date(state.settings.vacationDate).getTime() - new Date().getTime()) / 86400000
+    )
+  );
+  return (
+    <Badge variant="secondary" className="gap-1.5 px-2.5 py-1.5">
+      <Plane className="size-3.5" />
+      <span className="tabular-nums">{daysLeft}</span>
+      <span className="hidden text-[10px] sm:inline">
+        {daysLeft === 1 ? "day" : "days"} to go
+      </span>
+    </Badge>
+  );
 }
 
 function BottomNav({ pathname }: { pathname: string }) {

@@ -12,21 +12,27 @@ import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { formatMoney, formatDate } from "@/lib/format";
 import { getCurrentWeek } from "@/domain/calendar";
-import { getWeekPayment, getWeeklyTarget } from "@/domain/calculations";
+import { getWeekPayment, getWeekSavings, getWeeklyTarget } from "@/domain/calculations";
 
 export function WeeklyPaymentCard() {
   const { state } = useThrift();
   const { member } = useAuth();
-  const [dialogWeek, setDialogWeek] = React.useState<string | null>(null);
+  const [dialogWeekId, setDialogWeekId] = React.useState<string | null>(null);
 
   if (!state || !member) return null;
 
   const isAdmin = member.role === "admin";
   const currentWeek = getCurrentWeek(state.weeks);
   const weeklyTarget = currentWeek ? getWeeklyTarget(state, member.id, currentWeek) : 0;
+  const currentIndex = currentWeek ? state.weeks.findIndex((w) => w.id === currentWeek.id) : -1;
+  const nextWeek = currentIndex >= 0 ? state.weeks[currentIndex + 1] : undefined;
+  const targetWeek = dialogWeekId ? state.weeks.find((w) => w.id === dialogWeekId) : undefined;
   const currentPayment = currentWeek
     ? getWeekPayment(state.payments, member.id, currentWeek.id)
     : undefined;
+  const nextWeekCovered = nextWeek ? getWeekSavings(state.savings, member.id, nextWeek.id) : 0;
+  const nextWeekTarget = nextWeek ? getWeeklyTarget(state, member.id, nextWeek) : 0;
+  const nextWeekFullyCovered = nextWeekTarget > 0 && nextWeekCovered >= nextWeekTarget;
   const hasPendingReceipt =
     currentPayment?.receiptStatus === "pending" || currentPayment?.status === "pending";
   const hasReceipt = Boolean(currentPayment?.receiptUrl) || Boolean(currentPayment?.receiptStatus);
@@ -81,18 +87,49 @@ export function WeeklyPaymentCard() {
             <Badge variant="warning">Pending</Badge>
           </div>
         ) : isConfirmed ? (
-          <div className="flex items-center gap-4 rounded-2xl border border-success/30 bg-success/5 p-4">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-success/15 text-success">
-              <Check className="size-5" />
+          <div className="space-y-3">
+            <div className="flex items-center gap-4 rounded-2xl border border-success/30 bg-success/5 p-4">
+              <div className="flex size-11 items-center justify-center rounded-xl bg-success/15 text-success">
+                <Check className="size-5" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold">Week {currentWeek?.number} confirmed</p>
+                <p className="text-xs text-muted-foreground">
+                  {formatMoney(currentPayment?.amount ?? weeklyTarget)} recorded for this week. One
+                  receipt per week — you’re all set.
+                </p>
+              </div>
+              <Badge variant="success">Paid</Badge>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold">Week {currentWeek?.number} confirmed</p>
-              <p className="text-xs text-muted-foreground">
-                {formatMoney(currentPayment?.amount ?? weeklyTarget)} recorded for this week. One
-                receipt per week — you’re all set.
-              </p>
-            </div>
-            <Badge variant="success">Paid</Badge>
+            {nextWeek ? (
+              nextWeekFullyCovered ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-success/30 bg-success/5 p-4">
+                  <div className="flex size-11 items-center justify-center rounded-xl bg-success/15 text-success">
+                    <Check className="size-5" />
+                  </div>
+                  <p className="text-sm font-medium">
+                    Week {nextWeek.number} is already fully covered in advance — you’re all set.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="w-full gap-2"
+                    onClick={() => setDialogWeekId(nextWeek.id)}
+                  >
+                    <ArrowLeftRight className="size-4" /> Pay for Week {nextWeek.number} in advance
+                  </Button>
+                  {nextWeekCovered > 0 ? (
+                    <p className="text-center text-xs text-muted-foreground">
+                      {formatMoney(nextWeekCovered)} of {formatMoney(nextWeekTarget)} already
+                      covered for Week {nextWeek.number} — top up to cover more.
+                    </p>
+                  ) : null}
+                </div>
+              )
+            ) : null}
           </div>
         ) : currentPayment?.receiptStatus === "rejected" ? (
           <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
@@ -112,7 +149,7 @@ export function WeeklyPaymentCard() {
             <Button
               size="lg"
               className="w-full gap-2"
-              onClick={() => setDialogWeek(currentWeek?.id ?? "")}
+              onClick={() => setDialogWeekId(currentWeek?.id ?? "")}
             >
               <ArrowLeftRight className="size-4" /> Re-upload receipt for Week {currentWeek?.number}
             </Button>
@@ -153,7 +190,7 @@ export function WeeklyPaymentCard() {
             <Button
               size="lg"
               className="w-full gap-2"
-              onClick={() => setDialogWeek(currentWeek.id)}
+              onClick={() => setDialogWeekId(currentWeek.id)}
             >
               <ArrowLeftRight className="size-4" /> I&apos;ve transferred · upload receipt
             </Button>
@@ -169,11 +206,11 @@ export function WeeklyPaymentCard() {
         ) : null}
 
         <ReceiptUploadDialog
-          open={dialogWeek !== null}
-          onOpenChange={(o) => !o && setDialogWeek(null)}
-          weekId={dialogWeek ?? ""}
-          weekNumber={currentWeek?.number ?? 0}
-          amount={currentWeek ? getWeeklyTarget(state, member.id, currentWeek) : 0}
+          open={dialogWeekId !== null}
+          onOpenChange={(o) => !o && setDialogWeekId(null)}
+          weekId={targetWeek?.id ?? ""}
+          weekNumber={targetWeek?.number ?? 0}
+          amount={targetWeek ? getWeeklyTarget(state, member.id, targetWeek) : 0}
           account={state.settings.paymentAccount}
         />
       </CardContent>
