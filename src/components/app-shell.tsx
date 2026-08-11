@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Plane,
   Wallet,
+  ClipboardCheck,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -47,16 +48,22 @@ const NAV_ITEMS = [
   { href: "/members", label: "Family", icon: Users },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/manage-days", label: "Manage days", icon: ClipboardCheck, adminOnly: true },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, member } = useAuth();
   const { state, isReady, isReloading, markNotificationsRead } = useThrift();
   const { resolvedTheme, toggle } = useTheme();
 
   const totalSaved = React.useMemo(() => (state ? getFamilySavings(state) : 0), [state]);
+
+  const visibleNav = React.useMemo(() => {
+    const isAdmin = member?.role === "admin";
+    return NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+  }, [member]);
 
   const needsOnboarding = isReady && !isReloading && !loading && user && !state;
   const isOnboarding = pathname === "/onboarding";
@@ -102,7 +109,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
 
         <nav className="mt-8 flex flex-1 flex-col gap-1">
-          {NAV_ITEMS.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link key={item.href} href={item.href}>
@@ -147,7 +154,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/dashboard" className="lg:hidden">
               <Logo showText={false} />
             </Link>
-            <HeaderTitle pathname={pathname} />
+            <HeaderTitle pathname={pathname} navItems={visibleNav} />
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -196,7 +203,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      <BottomNav pathname={pathname} />
+      <BottomNav pathname={pathname} items={visibleNav} />
     </div>
   );
 }
@@ -307,10 +314,16 @@ function greeting(): string {
   return "Good evening";
 }
 
-function HeaderTitle({ pathname }: { pathname: string }) {
+function HeaderTitle({
+  pathname,
+  navItems,
+}: {
+  pathname: string;
+  navItems: typeof NAV_ITEMS;
+}) {
   const { state } = useThrift();
   const { member } = useAuth();
-  const title = NAV_ITEMS.find((i) => pathname.startsWith(i.href))?.label ?? "ThriftWise";
+  const title = navItems.find((i) => pathname.startsWith(i.href))?.label ?? "ThriftWise";
 
   if (pathname === "/dashboard" && state && member) {
     const familyGoal = getFamilyGoal(state);
@@ -349,12 +362,12 @@ function DaysLeftBadge() {
   );
 }
 
-function BottomNav({ pathname }: { pathname: string }) {
-  const items = NAV_ITEMS.slice(0, 5);
+function BottomNav({ pathname, items }: { pathname: string; items: typeof NAV_ITEMS }) {
+  const bottomItems = items.slice(0, 5);
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5">
-        {items.map((item) => {
+        {bottomItems.map((item) => {
           const active = pathname === item.href;
           return (
             <Link key={item.href} href={item.href} className="flex flex-col items-center gap-1 py-2.5">

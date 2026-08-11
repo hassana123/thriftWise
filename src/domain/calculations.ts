@@ -526,3 +526,44 @@ export function recordDaysPaid(
 
   return { savings, payments, weekIds: [...touched] };
 }
+
+// Removes specific contribution DAYS from a member's ledger — the manual
+// "un-mark" path. Only the given dates are removed; affected weeks' payment
+// records are re-synced to mirror their new day-sums (the inverse of
+// `recordDaysPaid`). A week whose day-sum drops to zero loses its payment
+// record entirely.
+export function unmarkDays(
+  state: ThriftState,
+  memberId: string,
+  dates: string[]
+): { savings: DaySaving[]; payments: WeekPayment[] } {
+  const toRemove = new Set(dates);
+  if (toRemove.size === 0) return { savings: state.savings, payments: state.payments };
+  const savings = state.savings.filter(
+    (s) => !(s.memberId === memberId && toRemove.has(s.date))
+  );
+  const weekByDate = new Map<string, ThriftWeek>();
+  for (const w of state.weeks) {
+    for (const d of w.days) weekByDate.set(d.date, w);
+  }
+  const affectedWeekIds = new Set(
+    dates
+      .map((date) => weekByDate.get(date)?.id)
+      .filter((id): id is string => Boolean(id))
+  );
+  let payments = state.payments;
+  for (const weekId of affectedWeekIds) {
+    const total = getWeekSavings(savings, memberId, weekId);
+    const existingIdx = payments.findIndex(
+      (p) => p.memberId === memberId && p.weekId === weekId
+    );
+    if (total <= 0) {
+      if (existingIdx >= 0) {
+        payments = payments.filter((_, i) => i !== existingIdx);
+      }
+    } else if (existingIdx >= 0) {
+      payments = payments.map((p, i) => (i === existingIdx ? { ...p, amount: total } : p));
+    }
+  }
+  return { savings, payments };
+}

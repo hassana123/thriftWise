@@ -2,7 +2,15 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { CalendarDays, Check, ImagePlus, Loader2, PartyPopper, ShieldCheck } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  ImagePlus,
+  Loader2,
+  PartyPopper,
+  ReceiptText,
+  ShieldCheck,
+} from "lucide-react";
 
 import {
   Dialog,
@@ -17,10 +25,12 @@ import { cn, namesMatch } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import { useThrift } from "@/providers/thrift-provider";
 import { useAuth } from "@/providers/auth-provider";
-import { getMemberPlan } from "@/domain/calculations";
+import { getMemberPlan, planDayCoverage } from "@/domain/calculations";
 import { useConfetti } from "@/components/confetti";
 import { uploadReceipt } from "@/lib/upload";
 import { CopyButton } from "@/components/copy-button";
+
+const DEFAULT_DAYS = 5;
 
 export function ReceiptUploadDialog({
   open,
@@ -46,7 +56,6 @@ export function ReceiptUploadDialog({
   const [receiptAmount, setReceiptAmount] = React.useState<string>("");
   const [senderName, setSenderName] = React.useState("");
   const [accountNumber, setAccountNumber] = React.useState("");
-  const [daysPaid, setDaysPaid] = React.useState(5);
   const [uploading, setUploading] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [wasAutoApproved, setWasAutoApproved] = React.useState(false);
@@ -58,7 +67,6 @@ export function ReceiptUploadDialog({
       setReceiptAmount(amount > 0 ? String(amount) : "");
       setSenderName(member?.name ?? "");
       setAccountNumber(account.accountNumber);
-      setDaysPaid(5);
       setUploading(false);
       setDone(false);
       setWasAutoApproved(false);
@@ -71,25 +79,46 @@ export function ReceiptUploadDialog({
     return Number.isFinite(num) && num > 0 ? num : 0;
   }, [receiptAmount]);
 
-  // The amount decides how many days are covered (₦2100 at ₦300/day = 7 days).
-  // The selected day count only pre-fills the expected amount.
   const dailyRate = React.useMemo(() => {
     if (!state || !member) return 0;
     return getMemberPlan(state, member.id)?.dailyAmount ?? 0;
   }, [state, member]);
 
+  // The amount decides how many days are covered (₦2100 at ₦300/day = 7 days).
+  // Typing an amount always drives the day count — it can never drift apart.
   const effectiveDays = React.useMemo(() => {
     if (enteredAmount > 0 && dailyRate > 0) return Math.max(1, Math.round(enteredAmount / dailyRate));
-    return daysPaid;
-  }, [enteredAmount, dailyRate, daysPaid]);
+    return DEFAULT_DAYS;
+  }, [enteredAmount, dailyRate]);
 
-  const daysLabel = React.useMemo(() => {
-    if (effectiveDays <= 5) return "This week only (Mon–Fri)";
-    const weeks = Math.floor(effectiveDays / 5);
-    const extra = effectiveDays % 5;
-    if (extra === 0) return `${weeks} full weeks (${effectiveDays} working days)`;
-    return `${weeks} week${weeks > 1 ? "s" : ""} + ${extra} day${extra > 1 ? "s" : ""} of the next week`;
-  }, [effectiveDays]);
+  // Preview exactly which working days this payment would cover, starting from
+  // the earliest unpaid day. Already-paid days are skipped, so a second upload
+  // for the same week tops up the leftovers instead of double-counting them.
+  const coverage = React.useMemo(() => {
+    if (!state || !member) return [];
+    if (enteredAmount <= 0) return [];
+    return planDayCoverage(state, member.id, weekId, enteredAmount);
+  }, [state, member, weekId, enteredAmount]);
+
+  const startWeekMissing = React.useMemo(() => {
+    if (!state || !member) return 0;
+    const week = state.weeks.find((w) => w.id === weekId);
+    if (!week) return 0;
+    const covered = new Set(
+      state.savings.filter((s) => s.memberId === member.id).map((s) => s.date)
+    );
+    return week.days.filter((d) => !covered.has(d.date)).length;
+  }, [state, member, weekId]);
+
+  const coverageLabel = React.useMemo(() => {
+    if (coverage.length === 0) {
+      if (enteredAmount > 0) return "already-covered days only";
+      return `${DEFAULT_DAYS} days`;
+    }
+    return coverage
+      .map((c) => `${c.dates.length} day${c.dates.length === 1 ? "" : "s"} of Week ${c.week.number}`)
+      .join(" and ");
+  }, [coverage, enteredAmount]);
 
   const nameOk = React.useMemo(
     () => Boolean(member) && namesMatch(senderName, member?.name ?? ""),
@@ -107,7 +136,7 @@ export function ReceiptUploadDialog({
     setUploading(true);
     try {
       const url = await uploadReceipt(file, member.id, weekId);
-      saveReceipt(member.id, weekId, url, enteredAmount || undefined, allVerified, daysPaid);
+      saveReceipt(member.id, weekId, url, enteredAmount || undefined, allVerified, effectiveDays);
       setWasAutoApproved(allVerified);
       setDone(true);
       fireConfetti();
@@ -118,7 +147,7 @@ export function ReceiptUploadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[75vh] max-w-sm flex-col gap-5 sm:max-h-[85vh]">
+      <DialogContent className="flex max-h-[80vh] max-w-xl flex-col gap-5 overflow-hidden sm:max-h-[88vh]">
         <DialogHeader className="shrink-0 text-left">
           <DialogTitle>Complete your transfer</DialogTitle>
           <DialogDescription>Week {weekNumber} contribution</DialogDescription>
@@ -142,13 +171,13 @@ export function ReceiptUploadDialog({
                   <>
                     All details matched — your payment is now{" "}
                     <span className="font-semibold text-foreground">marked as paid</span> for{" "}
-                    <span className="font-semibold text-foreground">{daysLabel}</span>. No review
+                    <span className="font-semibold text-foreground">{coverageLabel}</span>. No review
                     needed.
                   </>
                 ) : (
                   <>
                     Your payment for{" "}
-                    <span className="font-semibold text-foreground">{daysLabel}</span> is now{" "}
+                    <span className="font-semibold text-foreground">{coverageLabel}</span> is now{" "}
                     <span className="font-semibold text-foreground">pending review</span>. The admin
                     will approve it shortly.
                   </>
@@ -161,27 +190,137 @@ export function ReceiptUploadDialog({
           </motion.div>
         ) : (
           <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
-            <div className="rounded-2xl bg-primary p-4 text-primary-foreground">
-              <p className="text-xs text-primary-foreground/70">
-                Amount on your receipt (editable)
-              </p>
-              <div className="relative mt-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-primary-foreground/70">
+            <div className="space-y-2 rounded-2xl border p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Amount on the receipt</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Open your bank&apos;s transfer receipt and type the{" "}
+                    <span className="font-semibold text-foreground">exact amount</span> it shows —
+                    that amount is what gets recorded.
+                  </p>
+                </div>
+                <ReceiptText className="size-5 shrink-0 text-primary" />
+              </div>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-muted-foreground">
                   ₦
                 </span>
                 <Input
                   type="number"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   min={0}
-                  className="h-12 border-white/20 bg-white/10 pl-9 text-2xl font-bold text-white placeholder:text-primary-foreground/50 focus-visible:bg-white/15"
+                  className="h-12 pl-9 text-2xl font-bold"
                   value={receiptAmount}
                   onChange={(e) => setReceiptAmount(e.target.value)}
                   placeholder={formatMoney(amount)}
                 />
               </div>
-              <p className="mt-1.5 text-xs text-primary-foreground/70">
-                Enter exactly what the receipt shows — that amount will be recorded.
+              <p
+                className={cn(
+                  "text-xs",
+                  enteredAmount > 0 ? "text-success" : "text-warning"
+                )}
+              >
+                {enteredAmount > 0
+                  ? `Got it — ${formatMoney(enteredAmount)} will be recorded.`
+                  : "Don’t guess: check the receipt and type the amount exactly as shown."}
               </p>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <CalendarDays className="size-4 text-primary" /> Days this covers
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {dailyRate > 0 ? (
+                  <>
+                    {formatMoney(dailyRate)} per working day. The amount decides the day count — it
+                    updates automatically as you type, and already-paid days are skipped so nothing
+                    is double-counted.
+                  </>
+                ) : (
+                  "Already-paid days are skipped so nothing is double-counted."
+                )}
+              </p>
+
+              <div className="grid grid-cols-4 gap-1.5">
+                {[5, 7, 10, 15].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => dailyRate > 0 && setReceiptAmount(String(d * dailyRate))}
+                    className={cn(
+                      "rounded-xl border-2 py-2 text-sm font-bold transition-all",
+                      effectiveDays === d
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    )}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Days covered:</span>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={String(effectiveDays)}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    const d = Number.isFinite(v) && v > 0 ? v : 1;
+                    if (dailyRate > 0) setReceiptAmount(String(d * dailyRate));
+                  }}
+                  className="h-9 w-20 text-center font-bold"
+                />
+              </div>
+
+              {enteredAmount > 0 ? (
+                coverage.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {coverage.map((c) => {
+                      const completesWeek =
+                        c.week.id === weekId &&
+                        c.dates.length === startWeekMissing &&
+                        startWeekMissing > 0;
+                      return (
+                        <div
+                          key={c.week.id}
+                          className="flex items-center justify-between rounded-xl bg-secondary/60 px-3 py-2 text-xs font-medium"
+                        >
+                          <span>
+                            Week {c.week.number}
+                            {completesWeek ? (
+                              <span className="ml-1.5 text-success">· completes this week</span>
+                            ) : c.week.id !== weekId ? (
+                              <span className="ml-1.5 text-muted-foreground">
+                                · rolls into next week
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="flex items-center gap-1 text-primary">
+                            <Check className="size-3.5" strokeWidth={3} />
+                            {c.dates.length} day{c.dates.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <p className="text-[11px] text-muted-foreground">
+                      Covers the earliest unpaid days first — weekends are never counted.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs font-medium">
+                    Already covered — this amount won’t add any new days.
+                  </p>
+                )
+              ) : (
+                <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs font-medium">
+                  Type an amount above to see exactly which days it covers.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2 rounded-2xl border p-4">
@@ -231,53 +370,6 @@ export function ReceiptUploadDialog({
               <p className="text-xs text-muted-foreground">
                 When all three details match, this payment is confirmed automatically — no admin
                 review needed.
-              </p>
-            </div>
-
-            <div className="space-y-2 rounded-2xl border p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold">
-                <CalendarDays className="size-4 text-primary" /> How many days does this cover?
-              </p>
-              <p className="text-xs text-muted-foreground">
-                The amount decides how many days this covers (e.g. ₦2,100 at ₦300/day = 7 days) —
-                extra days roll into the next week(s). Weekends are never counted.
-              </p>
-              <div className="grid grid-cols-4 gap-1.5">
-                {[5, 7, 10, 15].map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => {
-                      setDaysPaid(d);
-                      if (dailyRate > 0) setReceiptAmount(String(d * dailyRate));
-                    }}
-                    className={cn(
-                      "rounded-xl border-2 py-2 text-sm font-bold transition-all",
-                      daysPaid === d
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border text-muted-foreground hover:border-primary/40"
-                    )}
-                  >
-                    {d}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Custom days:</span>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  value={daysPaid}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    setDaysPaid(Number.isFinite(v) && v > 0 ? v : 5);
-                  }}
-                  className="h-9 w-20 text-center font-bold"
-                />
-              </div>
-              <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs font-medium">
-                {daysLabel}
               </p>
             </div>
 

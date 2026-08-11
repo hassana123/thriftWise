@@ -15,9 +15,8 @@ import { buildPlan, planKeyFromAmount, AVATAR_COLORS } from "@/domain/constants"
 import { getRepository, seedDemoState } from "@/lib/repository";
 import { getSupabaseMode } from "@/lib/supabase/config";
 import { deleteReceipt } from "@/lib/upload";
-import { getTotalTransferred, getWeeklyTarget, getPlanForWeek, getMemberPlan, resyncMemberWeeks, needsDayRepair, resyncAllMembers, applyPaymentAllocation, recordDaysPaid, getSavingsOn } from "@/domain/calculations";
+import { getTotalTransferred, getWeeklyTarget, getPlanForWeek, getMemberPlan, resyncMemberWeeks, needsDayRepair, resyncAllMembers, applyPaymentAllocation, recordDaysPaid, unmarkDays as unmarkDaysCore, getSavingsOn } from "@/domain/calculations";
 import { ensureReminders } from "@/domain/reminders";
-import { applyAutoSave } from "@/domain/auto-save";
 
 interface ThriftContextValue {
   state: ThriftState | null;
@@ -38,6 +37,7 @@ interface ThriftContextValue {
   rejectPayment: (memberId: string, weekId: string, note?: string) => void;
   markPaidManually: (memberId: string, weekId: string, amount?: number) => void;
   markDaysPaid: (memberId: string, dates: string[]) => void;
+  unmarkDays: (memberId: string, dates: string[]) => void;
   unmarkPaid: (memberId: string, weekId: string) => void;
   changePlan: (
     memberId: string,
@@ -140,16 +140,6 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
     }, 60 * 60 * 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  // Auto-record each day's saving once the day's cutoff passes, so nobody has
-  // to remember to tap "saved". Idempotent — already-recorded days are skipped.
-  React.useEffect(() => {
-    if (!isReady) return;
-    const tick = () => setState((prev) => (prev ? applyAutoSave(prev) : prev));
-    tick();
-    const id = window.setInterval(tick, 60 * 1000);
-    return () => window.clearInterval(id);
-  }, [isReady]);
 
   React.useEffect(() => {
     if (isReady && state) {
@@ -458,6 +448,30 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
           "payment_approved",
           `${member?.name ?? "Member"} marked ${dates.length} day${dates.length === 1 ? "" : "s"} paid (${weekLabel})`,
           total
+        );
+      });
+    },
+    [pushActivity]
+  );
+
+  const unmarkDays = React.useCallback(
+    (memberId: string, dates: string[]) => {
+      setState((prev) => {
+        if (!prev || dates.length === 0) return prev;
+        const member = prev.members.find((m) => m.id === memberId);
+        const removedAmount = dates.reduce(
+          (sum, d) => sum + getSavingsOn(prev.savings, memberId, d),
+          0
+        );
+        const { savings, payments } = unmarkDaysCore(prev, memberId, dates);
+        return pushActivity(
+          { ...prev, savings, payments },
+          "hassana",
+          "payment_rejected",
+          `${member?.name ?? "Member"} unmarked ${dates.length} day${
+            dates.length === 1 ? "" : "s"
+          } from the ledger`,
+          removedAmount
         );
       });
     },
@@ -810,6 +824,7 @@ export function ThriftProvider({ children }: { children: React.ReactNode }) {
         rejectPayment,
         markPaidManually,
         markDaysPaid,
+        unmarkDays,
         unmarkPaid,
         changePlan,
         addMember,

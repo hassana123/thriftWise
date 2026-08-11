@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, ShieldCheck } from "lucide-react";
 import { addDays } from "date-fns";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,7 +67,16 @@ export default function LedgerPage() {
             Total saved: <span className="font-semibold text-foreground">{formatMoney(familySaved)}</span>
           </p>
         </div>
-        <WhatsAppShareButton />
+        <div className="flex items-center gap-2">
+          {member.role === "admin" ? (
+            <Button variant="outline" size="sm" className="gap-1.5" asChild>
+              <Link href="/manage-days">
+                <ClipboardCheck className="size-4" /> Manage days
+              </Link>
+            </Button>
+          ) : null}
+          <WhatsAppShareButton />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
