@@ -36,7 +36,7 @@ export default function LandingPage() {
   if (!settled || user || state) return null;
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-emerald-50 via-background to-background px-4 dark:from-emerald-950/40">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-emerald-50 via-background to-background px-4 dark:from-emerald-950/40">
       <div className="pointer-events-none absolute -top-32 left-1/2 size-96 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 right-0 size-64 rounded-full bg-amber-200/15 blur-3xl dark:bg-amber-500/10" />
 

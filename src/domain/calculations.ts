@@ -124,6 +124,28 @@ export function getOutstandingBalance(state: ThriftState, memberId: string): num
   return Math.max(0, expected - transferred);
 }
 
+// The earliest week this member still owes payment for: the first past or
+// current week whose savings haven't reached their weekly target. Past weeks
+// that were missed or only partially covered are settled before we ever ask
+// for the current week's contribution, so the dashboard never jumps ahead of
+// an outstanding payment. Upcoming weeks are never outstanding. Returns null
+// when the member is fully covered up to and including the current week.
+export function getFirstUnpaidWeek(
+  state: ThriftState,
+  memberId: string,
+  today: Date = new Date()
+): ThriftWeek | null {
+  for (const week of state.weeks) {
+    if (getWeekStatus(week, today) === "upcoming") break;
+    const target = getWeeklyTarget(state, memberId, week);
+    if (target <= 0) continue;
+    const saved = getWeekSavings(state.savings, memberId, week.id);
+    if (saved >= target) continue;
+    return week;
+  }
+  return null;
+}
+
 export function getFamilyRanking(state: ThriftState): Member[] {
   return [...state.members].sort((a, b) => getTotalSaved(state, b.id) - getTotalSaved(state, a.id));
 }

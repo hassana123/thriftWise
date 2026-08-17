@@ -114,6 +114,8 @@
     color: var(--foreground);
     font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 

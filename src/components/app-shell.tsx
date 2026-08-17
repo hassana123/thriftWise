@@ -91,7 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!user) {
     if (isOnboarding) {
       return (
-        <div className="flex min-h-screen bg-background">
+        <div className="flex min-h-dvh bg-background">
           <main className="mx-auto w-full max-w-5xl flex-1 px-2 py-4 sm:px-2">
             {children}
           </main>
@@ -102,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-dvh bg-background">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r bg-card/60 px-4 py-6 backdrop-blur lg:flex">
         <Link href="/dashboard" className="px-2">
           <Logo />
@@ -149,15 +149,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="lg:hidden">
+        <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b bg-background/80 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-md sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link href="/dashboard" className="shrink-0 lg:hidden">
               <Logo showText={false} />
             </Link>
             <HeaderTitle pathname={pathname} navItems={visibleNav} />
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             <DaysLeftBadge />
 
             <Link
