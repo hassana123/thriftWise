@@ -23,10 +23,19 @@ const STATUS_BG: Record<LedgerStatus, string> = {
 const FONT =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
-// Renders the full contribution ledger to a PNG data URL using the Canvas 2D
+export interface LedgerImageWeekRange {
+  startIndex: number;
+  endIndex: number;
+}
+
+// Renders the contribution ledger to a PNG data URL using the Canvas 2D
 // API. Drawing directly avoids the CSS-serialisation issues that break DOM
 // screenshots (Tailwind v4 oklch colours, web fonts, off-screen layout).
-export async function renderLedgerImage(state: ThriftState): Promise<string> {
+// When `weekRange` is provided, only weeks within that range are included.
+export async function renderLedgerImage(
+  state: ThriftState,
+  weekRange?: LedgerImageWeekRange
+): Promise<string> {
   const ledger = buildLedger(state);
   const pad = 32;
   const nameCol = 220;
@@ -35,8 +44,17 @@ export async function renderLedgerImage(state: ThriftState): Promise<string> {
   const headerH = 96;
   const footerH = 64;
 
-  const weeks = ledger.weeks;
-  const rows = ledger.rows;
+  // Slice weeks to the selected range
+  const allWeeks = ledger.weeks;
+  const startIdx = weekRange ? Math.max(0, weekRange.startIndex) : 0;
+  const endIdx = weekRange ? Math.min(allWeeks.length - 1, weekRange.endIndex) : allWeeks.length - 1;
+  const weeks = allWeeks.slice(startIdx, endIdx + 1);
+
+  // Slice each row's cells to match the selected week range
+  const rows = ledger.rows.map((row) => ({
+    ...row,
+    cells: row.cells.slice(startIdx, endIdx + 1),
+  }));
 
   const width = pad * 2 + nameCol + Math.max(weeks.length, 1) * cellW;
   const height = headerH + rows.length * rowH + footerH + pad * 2;
@@ -60,8 +78,12 @@ export async function renderLedgerImage(state: ThriftState): Promise<string> {
 
   ctx.fillStyle = "#64748b";
   ctx.font = `500 13px ${FONT}`;
+  const isPartialRange = weekRange && (startIdx > 0 || endIdx < allWeeks.length - 1);
+  const rangeLabel = isPartialRange
+    ? `Weeks ${weeks[0].number}\u2013${weeks[weeks.length - 1].number}`
+    : "Family Contribution Ledger";
   ctx.fillText(
-    `Family Contribution Ledger · ${formatDate(new Date().toISOString(), "MMM d, yyyy")}`,
+    `${rangeLabel} \u00B7 ${formatDate(new Date().toISOString(), "MMM d, yyyy")}`,
     pad,
     60
   );

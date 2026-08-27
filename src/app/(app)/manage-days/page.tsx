@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
   ChevronLeft,
@@ -42,6 +43,7 @@ export default function ManageDaysPage() {
   const { member: me } = useAuth();
   const [selectedId, setSelectedId] = React.useState<string>("");
   const [pending, setPending] = React.useState<Map<string, boolean>>(new Map());
+  const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
 
   const currentWeekIndex = React.useMemo(() => {
     if (!state) return 0;
@@ -137,9 +139,21 @@ export default function ManageDaysPage() {
 
   const applyChanges = () => {
     if (!member) return;
-    if (toMark.length > 0) markDaysPaid(member.id, toMark);
-    if (toUnmark.length > 0) unmarkDays(member.id, toUnmark);
+    const parts: string[] = [];
+    if (toMark.length > 0) {
+      markDaysPaid(member.id, toMark);
+      parts.push(`${toMark.length} day${toMark.length === 1 ? "" : "s"} marked`);
+    }
+    if (toUnmark.length > 0) {
+      unmarkDays(member.id, toUnmark);
+      parts.push(`${toUnmark.length} day${toUnmark.length === 1 ? "" : "s"} unmarked`);
+    }
     setPending(new Map());
+    if (parts.length > 0) {
+      const weekLabel = week ? `Week ${week.number}` : "";
+      setSuccessMsg(`${parts.join(" and ")} for ${member.name}${weekLabel ? ` in ${weekLabel}` : ""}.`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    }
   };
 
   const saved = week ? getWeekSavings(state.savings, member?.id ?? "", week.id) : 0;
@@ -324,6 +338,21 @@ export default function ManageDaysPage() {
       )}
 
       <div className="sticky bottom-20 lg:bottom-4">
+        <AnimatePresence>
+          {successMsg ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-3 flex items-center gap-3 rounded-2xl border border-success/30 bg-success/5 px-4 py-3"
+            >
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-success/15">
+                <Check className="size-4 text-success" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{successMsg}</p>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card/95 p-3 shadow-lg backdrop-blur">
           <div className="space-y-0.5 text-xs">
             <p className="flex items-center gap-2 font-semibold">

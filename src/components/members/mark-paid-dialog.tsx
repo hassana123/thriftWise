@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { motion } from "framer-motion";
 import { format } from "date-fns";
-import { Check, HandCoins } from "lucide-react";
+import { Check, HandCoins, PartyPopper } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import {
 } from "@/domain/calculations";
 import { cn } from "@/lib/utils";
 import type { Member, ThriftWeek } from "@/domain/types";
+import { useConfetti } from "@/components/confetti";
 
 interface MarkPaidDialogProps {
   member: Member | null;
@@ -49,9 +51,12 @@ export function MarkPaidDialog({
   onOpenChange,
 }: MarkPaidDialogProps) {
   const { state, markDaysPaid } = useThrift();
+  const fireConfetti = useConfetti();
   const [weekId, setWeekId] = React.useState(startWeekId);
   const [amount, setAmount] = React.useState("");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [done, setDone] = React.useState(false);
+  const [doneSummary, setDoneSummary] = React.useState<{ days: number; weekLabel: string; total: number } | null>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
 
   const entered = Math.round(Number(amount) || 0);
@@ -61,6 +66,8 @@ export function MarkPaidDialog({
       setWeekId(startWeekId);
       setAmount("");
       setSelected(new Set());
+      setDone(false);
+      setDoneSummary(null);
       // Bring the week the admin clicked into view.
       requestAnimationFrame(() => {
         const container = listRef.current;
@@ -142,7 +149,11 @@ export function MarkPaidDialog({
   const confirm = () => {
     if (selected.size === 0) return;
     markDaysPaid(member.id, [...selected]);
-    onOpenChange(false);
+    const weekLabels = selectedByWeek.map((c) => `Week ${c.week.number}`);
+    const weekLabel = weekLabels.length > 1 ? weekLabels.join(" & ") : weekLabels[0] ?? "";
+    setDoneSummary({ days: selected.size, weekLabel, total });
+    setDone(true);
+    fireConfetti();
   };
 
   return (
@@ -163,6 +174,31 @@ export function MarkPaidDialog({
           </p>
         </DialogHeader>
 
+        {done && doneSummary ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center gap-4 px-5 py-10 text-center"
+          >
+            <div className="flex size-20 items-center justify-center rounded-full bg-success/15">
+              <PartyPopper className="size-10 text-primary" />
+            </div>
+            <div>
+              <p className="text-lg font-bold">Days marked as paid!</p>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">{doneSummary.days} day{doneSummary.days === 1 ? "" : "s"}</span>
+                {" "}marked for{" "}
+                <span className="font-semibold text-foreground">{member.name}</span> in{" "}
+                <span className="font-semibold text-foreground">{doneSummary.weekLabel}</span> —{" "}
+                {formatMoney(doneSummary.total)} recorded.
+              </p>
+            </div>
+            <Button className="w-full" onClick={() => onOpenChange(false)}>
+              Done
+            </Button>
+          </motion.div>
+        ) : (
+          <>
         <div
           ref={listRef}
           className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4"
@@ -327,6 +363,8 @@ export function MarkPaidDialog({
             <HandCoins className="size-4" /> Confirm {formatMoney(total)}
           </Button>
         </div>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );

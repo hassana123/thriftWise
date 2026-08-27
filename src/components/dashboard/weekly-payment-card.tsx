@@ -310,6 +310,7 @@ export function WeeklyPaymentCard() {
           weekNumber={dialogWeek?.number ?? 0}
           amount={dialogAmount ?? (dialogWeek ? getWeeklyTarget(state, member.id, dialogWeek) : 0)}
           account={state.settings.paymentAccount}
+          currentWeekNumber={currentWeek?.number}
         />
       </CardContent>
     </Card>

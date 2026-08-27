@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Check, Clock3, Eye, HandCoins, ShieldCheck, X } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,11 +17,22 @@ import {
 import { useThrift } from "@/providers/thrift-provider";
 import { formatMoney, formatDate, initials } from "@/lib/format";
 import { getWeeklyTarget } from "@/domain/calculations";
+import { getCurrentWeek } from "@/domain/calendar";
 
 export function ConfirmPayments() {
   const { state, approvePayment, rejectPayment } = useThrift();
   const [confirmId, setConfirmId] = React.useState<string | null>(null);
   const [viewUrl, setViewUrl] = React.useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
+
+  const currentWeek = state ? getCurrentWeek(state.weeks) : null;
+
+  React.useEffect(() => {
+    if (successMsg) {
+      const t = setTimeout(() => setSuccessMsg(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [successMsg]);
 
   if (!state) return null;
 
@@ -103,8 +115,15 @@ export function ConfirmPayments() {
                     size="sm"
                     className="gap-1"
                     onClick={() => {
+                      const wk = state.weeks.find((w) => w.id === payment.weekId);
+                      const isPast = Boolean(currentWeek && wk && wk.number < currentWeek.number);
                       approvePayment(payment.memberId, payment.weekId);
                       setConfirmId(null);
+                      setSuccessMsg(
+                        isPast
+                          ? `Week ${wk?.number} approved — past week settled for ${member?.name}.`
+                          : `Week ${wk?.number} approved for ${member?.name}.`
+                      );
                     }}
                   >
                     <Check className="size-3.5" /> Yes, approve
@@ -136,9 +155,11 @@ export function ConfirmPayments() {
                     size="sm"
                     variant="outline"
                     className="gap-1 text-destructive"
-                    onClick={() =>
-                      rejectPayment(payment.memberId, payment.weekId, "Receipt unclear, please re-upload")
-                    }
+                    onClick={() => {
+                      const wk = state.weeks.find((w) => w.id === payment.weekId);
+                      rejectPayment(payment.memberId, payment.weekId, "Receipt unclear, please re-upload");
+                      setSuccessMsg(`Week ${wk?.number} receipt rejected for ${member?.name}. They can re-upload.`);
+                    }}
                   >
                     <X className="size-3.5" /> Reject
                   </Button>
@@ -167,6 +188,22 @@ export function ConfirmPayments() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AnimatePresence>
+        {successMsg ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mx-5 mb-5 flex items-center gap-3 rounded-2xl border border-success/30 bg-success/5 px-4 py-3"
+          >
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-success/15">
+              <Check className="size-4 text-success" />
+            </div>
+            <p className="text-sm font-medium text-foreground">{successMsg}</p>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </Card>
   );
 }

@@ -49,6 +49,10 @@ export function RecordSavingDialog({
   }, [open, savedToday, dailyTarget]);
 
   const currentWeek = state ? getCurrentWeek(state.weeks) : null;
+
+  const dateWeek = state ? state.weeks.find((w) => w.days.some((d) => d.date === date)) : null;
+  const isPastWeek = Boolean(currentWeek && dateWeek && dateWeek.number < currentWeek.number);
+
   const weekProgress =
     state && member && currentWeek ? getWeekProgress(state, member.id, currentWeek) : 0;
   const weekTarget = state && member && currentWeek ? getWeeklyTarget(state, member.id, currentWeek) : 0;
@@ -77,13 +81,19 @@ export function RecordSavingDialog({
 
   const chips = [dailyTarget, 300, 500].filter((c, i, arr) => arr.indexOf(c) === i);
 
+  const dialogTitle = justCompleted
+    ? isPastWeek
+      ? "Past week caught up!"
+      : "Week complete!"
+    : "Record today\u2019s savings";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm gap-6">
         <DialogHeader className="text-left">
-          <DialogTitle>{justCompleted ? "Week complete! 🎉" : "Record today’s savings"}</DialogTitle>
+          <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>
-            {member?.name} · {date}
+            {member?.name} \u00B7 {date}
           </DialogDescription>
         </DialogHeader>
 
@@ -104,9 +114,14 @@ export function RecordSavingDialog({
                 <PartyPopper className="size-10 text-primary" />
               </motion.div>
               <p className="text-sm text-muted-foreground">
-                You reached your weekly target of{" "}
-                <span className="font-semibold text-foreground">{formatMoney(weekTarget)}</span>.
-                Time to transfer!
+                {isPastWeek
+                  ? <>You reached the weekly target of{" "}
+                    <span className="font-semibold text-foreground">{formatMoney(weekTarget)}</span> for{" "}
+                    <span className="font-semibold text-foreground">Week {dateWeek?.number}</span>.
+                    This past week is now up to date.</>
+                  : <>You reached your weekly target of{" "}
+                    <span className="font-semibold text-foreground">{formatMoney(weekTarget)}</span>.
+                    Time to transfer!</>}
               </p>
               <Button className="w-full" onClick={() => onOpenChange(false)}>
                 Done
@@ -129,7 +144,7 @@ export function RecordSavingDialog({
                 <Label htmlFor="saving-amount">Amount saved</Label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">
-                    ₦
+                    \u20A6
                   </span>
                   <Input
                     id="saving-amount"

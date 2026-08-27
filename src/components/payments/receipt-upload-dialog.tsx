@@ -39,6 +39,7 @@ export function ReceiptUploadDialog({
   weekNumber,
   amount,
   account,
+  currentWeekNumber,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -46,6 +47,7 @@ export function ReceiptUploadDialog({
   weekNumber: number;
   amount: number;
   account: { bank: string; accountName: string; accountNumber: string };
+  currentWeekNumber?: number;
 }) {
   const { uploadReceipt: saveReceipt, state } = useThrift();
   const { member } = useAuth();
@@ -131,6 +133,8 @@ export function ReceiptUploadDialog({
   );
   const allVerified = nameOk && amountOk && accountOk;
 
+  const isPastWeek = Boolean(currentWeekNumber && weekNumber < currentWeekNumber);
+
   async function handleSubmit() {
     if (!member || !file) return;
     setUploading(true);
@@ -164,22 +168,30 @@ export function ReceiptUploadDialog({
             </div>
             <div>
               <p className="text-lg font-bold">
-                {wasAutoApproved ? "Payment confirmed!" : "Receipt submitted!"}
+                {wasAutoApproved
+                  ? isPastWeek
+                    ? "Past week settled!"
+                    : "Payment confirmed!"
+                  : "Receipt submitted!"}
               </p>
               <p className="text-sm text-muted-foreground">
                 {wasAutoApproved ? (
                   <>
                     All details matched — your payment is now{" "}
                     <span className="font-semibold text-foreground">marked as paid</span> for{" "}
-                    <span className="font-semibold text-foreground">{coverageLabel}</span>. No review
-                    needed.
+                    <span className="font-semibold text-foreground">{coverageLabel}</span>.
+                    {isPastWeek
+                      ? " This past week is now up to date."
+                      : " No review needed."}
                   </>
                 ) : (
                   <>
                     Your payment for{" "}
                     <span className="font-semibold text-foreground">{coverageLabel}</span> is now{" "}
-                    <span className="font-semibold text-foreground">pending review</span>. The admin
-                    will approve it shortly.
+                    <span className="font-semibold text-foreground">pending review</span>.
+                    {isPastWeek
+                      ? " The admin will approve it shortly to clear this past week."
+                      : " The admin will approve it shortly."}
                   </>
                 )}
               </p>
