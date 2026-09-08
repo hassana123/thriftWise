@@ -14,6 +14,7 @@ import { formatMoney, formatDate } from "@/lib/format";
 import { getCurrentWeek, getWeekStatus } from "@/domain/calendar";
 import {
   getFirstUnpaidWeek,
+  getAllOutstandingWeeks,
   getWeekPayment,
   getWeekSavings,
   getWeeklyTarget,
@@ -56,18 +57,28 @@ export function WeeklyPaymentCard() {
   const targetCovered = Boolean(targetWeek && weeklyTarget > 0 && targetSavings >= weeklyTarget);
   const isConfirmed = currentPayment?.status === "approved" && targetCovered;
   const isPartiallyPaid = Boolean(currentPayment?.status === "approved" && !targetCovered);
-  // When an earlier week is still outstanding, let the member settle it and the
-  // current week in a single transfer — one receipt covers both.
+  // When earlier weeks are still outstanding, let the member settle ALL of them
+  // plus the current week in a single transfer — one receipt covers everything.
   const currentWeekTarget = currentWeek ? getWeeklyTarget(state, member.id, currentWeek) : 0;
   const currentWeekCovered = Boolean(
     currentWeek &&
       currentWeekTarget > 0 &&
       getWeekSavings(state.savings, member.id, currentWeek.id) >= currentWeekTarget
   );
+  const outstandingWeeks = getAllOutstandingWeeks(state, member.id);
   const canPayTogether = Boolean(
     isOverdue && targetWeek && currentWeek && currentWeek.id !== targetWeek.id && !currentWeekCovered
   );
-  const combinedTarget = weeklyTarget + currentWeekTarget;
+  // Calculate total for ALL outstanding weeks (missed/partial past weeks + current week if not covered)
+  const outstandingTotal = outstandingWeeks.reduce(
+    (sum, w) => {
+      const target = getWeeklyTarget(state, member.id, w);
+      const saved = getWeekSavings(state.savings, member.id, w.id);
+      return sum + Math.max(0, target - saved);
+    },
+    0
+  );
+  const combinedTarget = canPayTogether ? outstandingTotal : weeklyTarget;
 
   return (
     <Card className="relative overflow-hidden">
@@ -79,11 +90,14 @@ export function WeeklyPaymentCard() {
               <Wallet className="size-4" />{" "}
               {isOverdue ? "Outstanding payment" : "This week's payment"}
             </p>
-            <p className="mt-1 text-4xl font-bold">{formatMoney(weeklyTarget)}</p>
+            <p className="mt-1 text-4xl font-bold">
+              {isOverdue && outstandingWeeks.length > 1 ? formatMoney(outstandingTotal) : formatMoney(weeklyTarget)}
+            </p>
             {targetWeek ? (
               <p className="mt-1 text-sm text-primary-foreground/80">
-                Week {targetWeek.number} · {formatDate(targetWeek.startDate)} –{" "}
-                {formatDate(targetWeek.endDate)}
+                {isOverdue && outstandingWeeks.length > 1
+                  ? `${outstandingWeeks.length} weeks outstanding · Week ${outstandingWeeks[0].number} – Week ${outstandingWeeks[outstandingWeeks.length - 1].number}`
+                  : `Week ${targetWeek.number} · ${formatDate(targetWeek.startDate)} – ${formatDate(targetWeek.endDate)}`}
               </p>
             ) : null}
           </div>
@@ -232,24 +246,46 @@ export function WeeklyPaymentCard() {
                   <TriangleAlert className="size-5" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold">Week {targetWeek.number} was missed</p>
+                  <p className="text-sm font-semibold">
+                    {outstandingWeeks.length > 1
+                      ? `Weeks ${outstandingWeeks.map((w) => w.number).join(" & ")} were missed`
+                      : `Week ${targetWeek.number} was missed`}
+                  </p>
                   <p className="text-xs text-muted-foreground">
-                    Settle this outstanding week first — the current week will come up once it’s
-                    covered.
+                    {outstandingWeeks.length > 1
+                      ? `${outstandingWeeks.length} weeks are outstanding — settle them before the current week's contribution.`
+                      : `Settle this outstanding week first — the current week will come up once it's covered.`}
                   </p>
                 </div>
               </div>
             ) : null}
             {canPayTogether && currentWeek ? (
               <div className="space-y-2 rounded-2xl border border-primary/30 bg-primary/5 p-4">
-                <p className="text-sm font-semibold">Pay both weeks at once</p>
+                <p className="text-sm font-semibold">Settle all outstanding weeks</p>
                 <p className="text-xs text-muted-foreground">
-                  Cover Week {targetWeek.number} and Week {currentWeek.number} in a single
-                  transfer —{" "}
-                  <span className="font-semibold text-foreground">
-                    {formatMoney(combinedTarget)} total
-                  </span>
-                  . One receipt settles both.
+                  {outstandingWeeks.length > 0 ? (
+                    <>
+                      Pay for{" "}
+                      {outstandingWeeks.map((w) => `Week ${w.number}`).join(", ")}
+                      {currentWeek && !outstandingWeeks.some((w) => w.id === currentWeek.id)
+                        ? ` and Week ${currentWeek.number}`
+                        : ""}
+                      {" "}in a single transfer —{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatMoney(outstandingTotal)} total
+                      </span>
+                      . One receipt settles all.
+                    </>
+                  ) : (
+                    <>
+                      Cover Week {targetWeek.number} and Week {currentWeek.number} in a single
+                      transfer —{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatMoney(combinedTarget)} total
+                      </span>
+                      . One receipt settles both.
+                    </>
+                  )}
                 </p>
                 <Button
                   size="lg"

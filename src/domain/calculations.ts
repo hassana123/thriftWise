@@ -146,6 +146,27 @@ export function getFirstUnpaidWeek(
   return null;
 }
 
+// Returns ALL weeks that still need payment, from the first unpaid week up to
+// and including the current week. Each week in this list is either missed (past
+// with no savings) or partially covered. The current week is always included if
+// it has an outstanding balance. Used by the dashboard to show the full picture
+// of what a member owes — not just the first missed week.
+export function getAllOutstandingWeeks(
+  state: ThriftState,
+  memberId: string,
+  today: Date = new Date()
+): ThriftWeek[] {
+  const result: ThriftWeek[] = [];
+  for (const week of state.weeks) {
+    if (getWeekStatus(week, today) === "upcoming") break;
+    const target = getWeeklyTarget(state, memberId, week);
+    if (target <= 0) continue;
+    const saved = getWeekSavings(state.savings, memberId, week.id);
+    if (saved < target) result.push(week);
+  }
+  return result;
+}
+
 export function getFamilyRanking(state: ThriftState): Member[] {
   return [...state.members].sort((a, b) => getTotalSaved(state, b.id) - getTotalSaved(state, a.id));
 }
