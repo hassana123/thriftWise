@@ -61,6 +61,7 @@ export function ReceiptUploadDialog({
   const [uploading, setUploading] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [wasAutoApproved, setWasAutoApproved] = React.useState(false);
+  const [submittedCoverageLabel, setSubmittedCoverageLabel] = React.useState("");
 
   React.useEffect(() => {
     if (open) {
@@ -72,6 +73,7 @@ export function ReceiptUploadDialog({
       setUploading(false);
       setDone(false);
       setWasAutoApproved(false);
+      setSubmittedCoverageLabel("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -140,6 +142,7 @@ export function ReceiptUploadDialog({
     setUploading(true);
     try {
       const url = await uploadReceipt(file, member.id, weekId);
+      setSubmittedCoverageLabel(coverageLabel);
       saveReceipt(member.id, weekId, url, enteredAmount || undefined, allVerified, effectiveDays);
       setWasAutoApproved(allVerified);
       setDone(true);
@@ -179,7 +182,7 @@ export function ReceiptUploadDialog({
                   <>
                     All details matched — your payment is now{" "}
                     <span className="font-semibold text-foreground">marked as paid</span> for{" "}
-                    <span className="font-semibold text-foreground">{coverageLabel}</span>.
+                    <span className="font-semibold text-foreground">{submittedCoverageLabel}</span>.
                     {isPastWeek
                       ? " This past week is now up to date."
                       : " No review needed."}
@@ -187,7 +190,7 @@ export function ReceiptUploadDialog({
                 ) : (
                   <>
                     Your payment for{" "}
-                    <span className="font-semibold text-foreground">{coverageLabel}</span> is now{" "}
+                    <span className="font-semibold text-foreground">{submittedCoverageLabel}</span> is now{" "}
                     <span className="font-semibold text-foreground">pending review</span>.
                     {isPastWeek
                       ? " The admin will approve it shortly to clear this past week."
